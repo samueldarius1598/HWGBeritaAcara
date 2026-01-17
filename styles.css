@@ -1,0 +1,407 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&family=Sora:wght@600;700&display=swap");
+
+:root {
+    --odoo-purple: #b792ff;
+    --odoo-purple-strong: #8a6cf7;
+    --odoo-purple-soft: #efe9ff;
+    --odoo-ink: #2f2b3a;
+    --odoo-muted: #6b6780;
+    --odoo-bg: #f6f1fb;
+    --odoo-card: #ffffff;
+    --odoo-border: #e6def5;
+    --icon-print: none;
+    --icon-submit: none;
+    --icon-reset: none;
+}
+
+.stApp {
+    background: radial-gradient(1200px 600px at 10% -10%, #f9f3ff 0%, #f6f1fb 40%, #f3eefb 100%);
+    color: var(--odoo-ink);
+    font-family: "Manrope", sans-serif;
+}
+
+.block-container {
+    padding-top: 2.2rem;
+    padding-bottom: 3rem;
+    max-width: 1200px;
+}
+
+h1, h2, h3, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
+    font-family: "Sora", sans-serif;
+    color: var(--odoo-ink);
+    letter-spacing: -0.02em;
+}
+
+.stCaption, .stMarkdown p, label,
+.stTextInput label, .stSelectbox label, .stNumberInput label,
+.stDateInput label, .stFileUploader label {
+    color: var(--odoo-muted) !important;
+    font-weight: 500;
+}
+
+.stTextInput > div > div > input,
+.stNumberInput input,
+.stSelectbox > div > div > div,
+.stDateInput input,
+.stTextArea textarea,
+.stFileUploader section {
+    background: var(--odoo-card) !important;
+    border: 1px solid var(--odoo-border) !important;
+    border-radius: 12px !important;
+    padding: 0.6rem 0.8rem !important;
+    box-shadow: 0 1px 0 rgba(138, 108, 247, 0.04);
+}
+
+.stSelectbox > div > div > div {
+    padding: 0.25rem 0.6rem !important;
+}
+
+div[data-baseweb="popover"] [role="option"] {
+    white-space: pre-line !important;
+    line-height: 1.2;
+    font-size: 0.78rem;
+    color: var(--odoo-muted);
+}
+
+div[data-baseweb="popover"] [role="option"]::first-line {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--odoo-ink);
+}
+
+div[data-baseweb="popover"] [role="option"] * {
+    white-space: inherit;
+}
+
+div[data-testid="stSelectbox"] [role="combobox"] {
+    line-height: 1.2;
+}
+
+div[data-testid="stSelectbox"] [role="combobox"] > div:first-child,
+div[data-testid="stSelectbox"] [role="combobox"] > div:first-child > div {
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.stTextInput > div > div > input:focus,
+.stNumberInput input:focus,
+.stSelectbox > div > div > div:focus-within,
+.stDateInput input:focus,
+.stTextArea textarea:focus {
+    border-color: var(--odoo-purple-strong) !important;
+    box-shadow: 0 0 0 3px rgba(138, 108, 247, 0.15) !important;
+}
+
+.stTextInput > div > div > input:disabled,
+.stNumberInput input:disabled,
+.stDateInput input:disabled,
+.stTextArea textarea:disabled {
+    color: #5b5670 !important;
+    background: #faf8ff !important;
+}
+
+.rti--container {
+    --rti-bg: var(--odoo-card);
+    --rti-border: var(--odoo-border);
+    --rti-main: var(--odoo-purple-strong);
+    --rti-radius: 12px;
+    --rti-s: 0.4rem;
+    --rti-tag: rgba(135, 90, 123, 0.18);
+    --rti-tag-remove: rgba(135, 90, 123, 0.85);
+    --rtiBg: var(--odoo-card);
+    --rtiBorder: var(--odoo-border);
+    --rtiMain: var(--odoo-purple-strong);
+    --rtiRadius: 12px;
+    --rtiS: 0.4rem;
+    --rtiTag: rgba(135, 90, 123, 0.18);
+    --rtiTagRemove: rgba(135, 90, 123, 0.85);
+    font-family: "Manrope", sans-serif;
+}
+
+.rti--tag {
+    color: var(--odoo-ink);
+}
+
+.rti--tag button {
+    color: rgba(135, 90, 123, 0.85);
+}
+
+.rti--tag button:hover {
+    color: #6f4865;
+}
+
+.stButton > button {
+    background: #875a7b !important;
+    color: #ffffff !important;
+    border: 1px solid #7b516f !important;
+    border-radius: 6px !important;
+    padding: 0.35rem 0.8rem !important;
+    font-size: 0.85rem !important;
+    font-weight: 600 !important;
+    box-shadow: none !important;
+}
+
+.stButton > button:hover {
+    background: #7b516f !important;
+    border-color: #6f4865 !important;
+}
+
+.stButton > button:active {
+    background: #6f4865 !important;
+    border-color: #64405a !important;
+}
+
+.stButton > button:disabled {
+    background: #c6b4c1 !important;
+    color: #ffffff !important;
+    border-color: #b7a5b2 !important;
+}
+
+[id*="-remove_"] button {
+    background: #d33f3f !important;
+    border-color: #c43636 !important;
+    padding: 0.2rem 0.55rem !important;
+    font-size: 0.75rem !important;
+}
+
+[id*="-remove_"] button:hover {
+    background: #c43636 !important;
+    border-color: #b82f2f !important;
+}
+
+[id$="-add_row"] button {
+    background: #2f9e44 !important;
+    border-color: #2b8a3e !important;
+    padding: 0.25rem 0.7rem !important;
+    font-size: 0.8rem !important;
+}
+
+[id$="-add_row"] button:hover {
+    background: #2b8a3e !important;
+    border-color: #277c38 !important;
+}
+
+.st-key-action_submit .stButton > button,
+.st-key-action_print .stButton > button,
+.st-key-action_reset .stButton > button {
+    border-radius: 6px !important;
+    padding: 0.25rem 0.7rem !important;
+    font-size: 0.78rem !important;
+    font-weight: 600 !important;
+    min-width: 110px !important;
+    height: 34px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0.35rem !important;
+    white-space: nowrap !important;
+    box-shadow: none !important;
+    text-decoration: none !important;
+}
+
+.st-key-action_submit .stButton > button::before,
+.st-key-action_print .stButton > button::before,
+.st-key-action_reset .stButton > button::before {
+    content: "";
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+}
+
+.st-key-action_submit .stButton > button::before {
+    background-image: var(--icon-submit);
+}
+
+.st-key-action_print .stButton > button::before {
+    background-image: var(--icon-print);
+}
+
+.st-key-action_reset .stButton > button::before {
+    background-image: var(--icon-reset);
+}
+
+.st-key-action_print .stButton > button {
+    background: #7faeff !important;
+    border: 1px solid #6fa0f0 !important;
+    color: #ffffff !important;
+}
+
+.st-key-action_print .stButton > button:hover {
+    background: #6fa0f0 !important;
+    border-color: #5f92e0 !important;
+}
+
+.st-key-action_submit .stButton > button {
+    background: #86d39a !important;
+    border: 1px solid #76c38b !important;
+    color: #ffffff !important;
+}
+
+.st-key-action_submit .stButton > button:hover {
+    background: #76c38b !important;
+    border-color: #67b57c !important;
+}
+
+.st-key-action_reset .stButton > button {
+    background: #f6dc85 !important;
+    border: 1px solid #e9cc74 !important;
+    color: #4a3b00 !important;
+}
+
+.st-key-action_reset .stButton > button:hover {
+    background: #e9cc74 !important;
+    border-color: #dcc167 !important;
+    color: #4a3b00 !important;
+}
+
+div[data-testid="stFileUploader"] section {
+    border-style: dashed !important;
+}
+
+div[data-testid="stDialog"]:has(.pdf-preview-marker),
+div[role="dialog"]:has(.pdf-preview-marker) {
+    width: min(96vw, 1200px) !important;
+    max-width: 96vw !important;
+}
+
+.pdf-preview-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.pdf-preview-toolbar {
+    display: flex;
+    gap: 0.6rem;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+.pdf-preview-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    height: 34px;
+    padding: 0 0.85rem;
+    border-radius: 6px;
+    border: 1px solid #6fa0f0;
+    background: #7faeff;
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 0.8rem;
+    font-family: "Manrope", sans-serif;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.pdf-preview-btn:hover {
+    background: #6fa0f0;
+    border-color: #5f92e0;
+}
+
+.pdf-preview-open {
+    border-color: #c8c2de;
+    background: #f6f1fb;
+    color: #2f2b3a;
+}
+
+.pdf-preview-open:hover {
+    background: #efe9ff;
+    border-color: #bfb2e6;
+}
+
+.pdf-preview-action-link {
+    display: flex;
+    align-items: center;
+}
+
+.pdf-preview-disabled {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.st-key-preview_download .stDownloadButton > button,
+.st-key-preview_download_fallback .stDownloadButton > button {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    height: 34px !important;
+    padding: 0 0.85rem !important;
+    border-radius: 6px !important;
+    border: 1px solid #6fa0f0 !important;
+    background: #7faeff !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
+    font-size: 0.8rem !important;
+    font-family: "Manrope", sans-serif !important;
+    text-decoration: none !important;
+    box-shadow: none !important;
+    white-space: nowrap !important;
+}
+
+.st-key-preview_download .stDownloadButton > button:hover,
+.st-key-preview_download_fallback .stDownloadButton > button:hover {
+    background: #6fa0f0 !important;
+    border-color: #5f92e0 !important;
+}
+
+.st-key-preview_download .stDownloadButton > button:disabled,
+.st-key-preview_download_fallback .stDownloadButton > button:disabled {
+    background: #c6d8f8 !important;
+    border-color: #b8c9e9 !important;
+    color: #ffffff !important;
+}
+
+.st-key-preview_close .stButton > button,
+.st-key-preview_close_fallback .stButton > button {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    height: 34px !important;
+    padding: 0 0.85rem !important;
+    border-radius: 6px !important;
+    border: 1px solid #c8c2de !important;
+    background: #f6f1fb !important;
+    color: #2f2b3a !important;
+    font-weight: 600 !important;
+    font-size: 0.8rem !important;
+    font-family: "Manrope", sans-serif !important;
+    text-decoration: none !important;
+    box-shadow: none !important;
+    white-space: nowrap !important;
+}
+
+.st-key-preview_close .stButton > button:hover,
+.st-key-preview_close_fallback .stButton > button:hover {
+    background: #efe9ff !important;
+    border-color: #bfb2e6 !important;
+}
+
+.pdf-preview-frame {
+    width: 100%;
+    height: min(70vh, 760px);
+    border: 1px solid #e6def5;
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+@media (max-width: 768px) {
+    .pdf-preview-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .pdf-preview-btn {
+        width: 100%;
+    }
+
+    .pdf-preview-frame {
+        height: min(60vh, 620px);
+    }
+}
