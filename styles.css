@@ -275,6 +275,17 @@ div[data-testid="stFileUploader"] section {
     border-style: dashed !important;
 }
 
+div[data-testid="stFileUploader"] section,
+div[data-testid="stFileUploader"] section * {
+    color: var(--odoo-ink) !important;
+}
+
+div[data-testid="stFileUploader"] button,
+div[data-testid="stFileUploader"] [data-baseweb="button"] *,
+div[data-testid="stFileUploader"] [role="button"] {
+    color: var(--odoo-ink) !important;
+}
+
 div[data-testid="stDialog"]:has(.pdf-preview-marker),
 div[role="dialog"]:has(.pdf-preview-marker) {
     width: min(96vw, 1200px) !important;
