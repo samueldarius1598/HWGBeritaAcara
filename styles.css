@@ -9,9 +9,15 @@
     --odoo-bg: #f6f1fb;
     --odoo-card: #ffffff;
     --odoo-border: #e6def5;
+    --primary-color: var(--odoo-purple-strong);
+    --background-color: var(--odoo-bg);
+    --secondary-background-color: var(--odoo-card);
+    --text-color: var(--odoo-ink);
+    --font: "Manrope", sans-serif;
     --icon-print: none;
     --icon-submit: none;
     --icon-reset: none;
+    color-scheme: light;
 }
 
 .stApp {
@@ -50,6 +56,7 @@ h1, h2, h3, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
     border-radius: 12px !important;
     padding: 0.6rem 0.8rem !important;
     box-shadow: 0 1px 0 rgba(138, 108, 247, 0.04);
+    color: var(--odoo-ink) !important;
 }
 
 .stSelectbox > div > div > div {
@@ -100,6 +107,11 @@ div[data-testid="stSelectbox"] [role="combobox"] > div:first-child > div {
 .stTextArea textarea:disabled {
     color: #5b5670 !important;
     background: #faf8ff !important;
+}
+
+.stTextInput > div > div > input::placeholder,
+.stTextArea textarea::placeholder {
+    color: var(--odoo-muted) !important;
 }
 
 .rti--container {
