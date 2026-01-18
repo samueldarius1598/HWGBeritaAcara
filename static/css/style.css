@@ -18,6 +18,8 @@
   --header-bg: rgba(255, 255, 255, 0.92);
   --header-border: rgba(227, 219, 231, 0.9);
   --surface: #fbf9fe;
+  --brand-logo-size: clamp(28px, 7vw, 42px);
+  --brand-logo-padding: clamp(3px, 0.8vw, 6px);
 }
 
 *,
@@ -83,12 +85,12 @@ body {
 }
 
 .app-logo {
-  width: 46px;
-  height: 46px;
+  width: var(--brand-logo-size);
+  height: var(--brand-logo-size);
   border-radius: 14px;
   border: 1px solid var(--border);
   background: #ffffff;
-  padding: 6px;
+  padding: var(--brand-logo-padding);
 }
 
 .app-brand-text {
@@ -114,8 +116,8 @@ body {
 }
 
 .app-brand-icon {
-  width: 42px;
-  height: 42px;
+  width: var(--brand-logo-size);
+  height: var(--brand-logo-size);
   object-fit: cover;
   border-radius: 12px;
   border: 1px solid var(--border);
