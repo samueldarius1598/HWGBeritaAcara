@@ -918,4 +918,14 @@ body.modal-open {
   .btn {
     width: 100%;
   }
+
+  .hero-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hero-actions form {
+    width: 100%;
+  }
 }
