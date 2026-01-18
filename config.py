@@ -34,3 +34,7 @@ def get_setting(key, default=None):
     if value not in (None, ""):
         return value
     return _load_secrets().get(key, default)
+
+
+def get_report_api_key():
+    return get_setting("REPORT_API_KEY") or ""

@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from config import get_setting
+from routers.reports import router as reports_router
 from services import (
     build_line_payload,
     build_mutasi_pdf,
@@ -31,6 +32,7 @@ SUPERADMIN_OUTLET = get_setting("SUPERADMIN_OUTLET") or "Cost Control"
 
 app = FastAPI(title="Form Berita Acara Mutasi")
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.include_router(reports_router)
 
 templates = Jinja2Templates(directory="templates")
 
