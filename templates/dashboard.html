@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dashboard - Mutasi Barang</title>
+    <link rel="icon" href="{{ url_for('static', path='img/faviconHWGBeritaAcara.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+  </head>
+  <body class="dashboard-body">
+    {% include "partials/app_header.html" %}
+    <main class="page dashboard-page">
+      <section class="dashboard-hero">
+        <div class="dashboard-intro">
+          <p class="page-kicker">Dashboard</p>
+          <h1>Smart App Cost Control HWG</h1>
+          <p class="page-sub">
+            Pilih modul untuk mengelola perpindahan persediaan di outlet -- Mutasi &amp; Berita Acara.
+          </p>
+        </div>
+        <div class="dashboard-widgets">
+          <div class="dashboard-highlight">
+            <span class="highlight-label">Outlet Aktif</span>
+            <span class="highlight-value">{{ profile.outlet_name or "Belum ditentukan" }}</span>
+          </div>
+          <div class="dashboard-summary">
+            <span class="highlight-label">Ringkasan Transaksi</span>
+            <div class="summary-grid">
+              <div class="summary-item">
+                <span class="summary-label">Total Mutasi</span>
+                <span class="summary-value">{{ total_transaksi }}</span>
+              </div>
+              <div class="summary-item">
+                <span class="summary-label">Incoming Pending</span>
+                <span class="summary-value {% if pending_incoming > 0 %}is-warning{% endif %}">
+                  {{ pending_incoming }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="dashboard-grid">
+        <a class="app-tile" href="/mutasi">
+          <div class="app-icon" aria-hidden="true">
+            <img
+              class="app-icon-image"
+              src="{{ url_for('static', path='img/iconModuleInternalTransfer.png') }}"
+              alt=""
+              loading="lazy"
+            >
+          </div>
+          <div class="app-info">
+            <h3>Mutasi Barang</h3>
+            <p>Catat perpindahan barang antar outlet dan pantau statusnya.</p>
+          </div>
+          <span class="app-badge">Module</span>
+        </a>
+      </section>
+
+    </main>
+    <footer class="dashboard-footer">
+      <div class="footer-inner">
+        <div class="footer-integrations">
+          <span>Aplikasi oleh Cost Control Dept, Integrasi dengan:</span>
+          <div class="footer-logos">
+            <img src="{{ url_for('static', path='img/odooERPIcon.png') }}" alt="Odoo" loading="lazy">
+            <img src="{{ url_for('static', path='img/ESB-ERPIcon.png') }}" alt="ESB" loading="lazy">
+            <img src="{{ url_for('static', path='img/excellcon.png') }}" alt="Excel" loading="lazy">
+          </div>
+        </div>
+        <div class="footer-brand">
+          <img src="{{ url_for('static', path='img/hwglcon.png') }}" alt="HWG" loading="lazy">
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -8,44 +8,20 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
   </head>
   <body>
-    <div class="page">
-      <header class="hero">
-        <div class="hero-main">
-          <img
-            class="hero-logo"
-            src="{{ url_for('static', path='img/faviconHWGBeritaAcara.png') }}"
-            alt="Logo"
-            loading="lazy"
-          >
-          <div>
-            <p class="hero-kicker">Cost Control Dept.</p>
-            <h1>Form Berita Acara [Mutasi &amp; Biaya Lainnya]</h1>
-            <p class="hero-sub">
-              Dikelola dan diperiksa sepenuhnya oleh Cost Control Dept.
-            </p>
-            <div class="hero-meta">
-              <span class="hero-chip">Mutasi &amp; Biaya Lainnya</span>
-              <span class="hero-note">
-                Pastikan data outlet, item, dan personel sudah lengkap.
-              </span>
-            </div>
-          </div>
+    {% include "partials/app_header.html" %}
+    <main class="page">
+      <div class="page-header">
+        <div class="page-title">
+          <p class="page-kicker">Form Mutasi</p>
+          <h1>Form Berita Acara Mutasi</h1>
+          <p class="page-sub">
+            Dikelola dan diperiksa sepenuhnya oleh Cost Control Dept.
+          </p>
         </div>
-        {% if profile %}
-        <div class="hero-actions">
-          <div class="user-pill">
-            <div>{{ profile.full_name or user_email or "User" }}</div>
-            {% if profile.outlet_name %}
-            <div class="user-outlet">{{ profile.outlet_name }}</div>
-            {% endif %}
-          </div>
-          <a class="btn ghost btn-sm" href="/profile">Profil</a>
-          <form method="post" action="/logout">
-            <button type="submit" class="btn ghost btn-sm">Logout</button>
-          </form>
+        <div class="page-actions">
+          <a class="btn ghost btn-sm" href="/mutasi">Kembali ke Daftar</a>
         </div>
-        {% endif %}
-      </header>
+      </div>
 
       {% if message %}
       <div class="alert {% if status == 'success' %}success{% else %}error{% endif %}">
@@ -249,7 +225,7 @@
 
         <input type="hidden" name="items_json" id="items-json">
       </form>
-    </div>
+    </main>
 
     <div class="modal hidden" id="pdf-modal" aria-hidden="true">
       <div class="modal-backdrop" data-close="true"></div>

@@ -1,0 +1,44 @@
+<header class="app-header">
+  <div class="app-header-inner">
+    <a class="app-brand" href="/">
+      <img
+        class="app-brand-icon"
+        src="{{ url_for('static', path='img/hwgIcon.png') }}"
+        alt="HWG"
+        loading="lazy"
+      >
+      <div class="app-brand-text">
+        <span class="app-kicker">Cost Control Dept.</span>
+        <span class="app-name">CC's Smart App HWG</span>
+      </div>
+      <img
+        class="app-logo app-logo-tight"
+        src="{{ url_for('static', path='img/faviconHWGBeritaAcara.png') }}"
+        alt="Logo"
+        loading="lazy"
+      >
+    </a>
+    {% if profile %}
+    <div class="app-user">
+      <div class="user-meta">
+        <span class="user-outlet">{{ profile.outlet_name or "Outlet belum diisi" }}</span>
+        <span class="user-name">{{ profile.full_name or user_email or "User" }}</span>
+      </div>
+      <details class="user-menu">
+        <summary>
+          <span>Menu</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M12 15.5 6 9.5l1.4-1.4L12 12.7l4.6-4.6 1.4 1.4-6 6Z"></path>
+          </svg>
+        </summary>
+        <div class="user-menu-card">
+          <a href="/profile">Profile</a>
+          <form method="post" action="/logout">
+            <button type="submit">Logout</button>
+          </form>
+        </div>
+      </details>
+    </div>
+    {% endif %}
+  </div>
+</header>

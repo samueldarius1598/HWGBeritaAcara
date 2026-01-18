@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Detail Mutasi - Mutasi Barang</title>
+    <link rel="icon" href="{{ url_for('static', path='img/faviconHWGBeritaAcara.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+  </head>
+  <body>
+    {% include "partials/app_header.html" %}
+    <main class="page">
+      <div class="page-header">
+        <div class="page-title">
+          <p class="page-kicker">Mutasi Barang</p>
+          <h1>Detail Mutasi</h1>
+          <p class="page-sub">Pantau detail dan proses penerimaan barang.</p>
+        </div>
+        <div class="page-actions">
+          <a class="btn ghost btn-sm" href="/mutasi">Kembali ke Daftar</a>
+          <a class="btn primary" href="/mutasi/form">Buat Baru</a>
+        </div>
+      </div>
+
+      {% if message %}
+      <div class="alert {% if status == 'success' %}success{% elif status == 'warning' %}warning{% else %}error{% endif %}">
+        {{ message }}
+      </div>
+      {% endif %}
+
+      <section class="card detail-card">
+        <div class="detail-summary">
+          <div class="detail-block">
+            <span class="detail-label">No Form</span>
+            <span class="detail-value">{{ header.no_form or "-" }}</span>
+          </div>
+          <div class="detail-block">
+            <span class="detail-label">Tanggal</span>
+            <span class="detail-value">{{ header.tanggal or "-" }}</span>
+          </div>
+          <div class="detail-block">
+            <span class="detail-label">Outlet Pengirim</span>
+            <span class="detail-value">{{ header.outlet_pengirim or "-" }}</span>
+          </div>
+          <div class="detail-block">
+            <span class="detail-label">Outlet Penerima</span>
+            <span class="detail-value">{{ header.outlet_penerima or "-" }}</span>
+          </div>
+          <div class="detail-block">
+            <span class="detail-label">Status</span>
+            <span class="status-badge {{ status_meta.class }}">{{ status_meta.label }}</span>
+          </div>
+        </div>
+        {% if header.received_by or header.received_at %}
+        <div class="detail-meta">
+          {% if header.received_by %}
+          <div class="detail-meta-item">
+            <span class="detail-label">Diterima Oleh</span>
+            <span class="detail-value">{{ header.received_by }}</span>
+          </div>
+          {% endif %}
+          {% if header.received_at %}
+          <div class="detail-meta-item">
+            <span class="detail-label">Diterima Pada</span>
+            <span class="detail-value">{{ header.received_at }}</span>
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+      </section>
+
+      <form class="card table-card" method="post" action="/mutasi/{{ header.id }}/receive" id="receive-form">
+        <div class="card-head">
+          <div>
+            <h2>Item Mutasi</h2>
+            <p class="card-sub">Periksa jumlah terkirim dan isikan jumlah yang diterima.</p>
+          </div>
+          {% if can_receive %}
+          <div class="table-actions">
+            <button type="button" class="btn ghost btn-sm" id="receive-all">Terima Semua</button>
+          </div>
+          {% endif %}
+        </div>
+        <div class="table-wrap">
+          <table class="data-table detail-table">
+            <thead>
+              <tr>
+                <th>Nama Item</th>
+                <th>Kode</th>
+                <th>UOM</th>
+                <th>Qty Kirim</th>
+                {% if is_superadmin %}
+                <th>Harga Satuan</th>
+                <th>Subtotal</th>
+                {% endif %}
+                <th>Qty Terima</th>
+                <th>Selisih</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if lines %}
+                {% for line in lines %}
+                <tr class="{% if line.missing_qty > 0 %}row-missing{% endif %}" data-qty-sent="{{ line.qty_sent }}">
+                  <td>{{ line.nama_item }}</td>
+                  <td>{{ line.kode_item }}</td>
+                  <td>{{ line.uom }}</td>
+                  <td class="numeric">{{ line.qty_sent }}</td>
+                  {% if is_superadmin %}
+                  <td class="numeric">{{ line.harga_display }}</td>
+                  <td class="numeric">{{ line.subtotal_display }}</td>
+                  {% endif %}
+                  <td>
+                    {% if can_receive %}
+                    <input
+                      type="number"
+                      class="receive-input"
+                      name="qty_received_{{ line.id }}"
+                      inputmode="decimal"
+                      step="0.01"
+                      min="0"
+                      max="{{ line.qty_sent }}"
+                      value="{% if line.qty_received > 0 %}{{ line.qty_received }}{% endif %}"
+                    >
+                    {% else %}
+                    <span class="readonly-value">{{ line.qty_received }}</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <span class="diff-value">{{ line.missing_qty }}</span>
+                  </td>
+                </tr>
+                {% endfor %}
+              {% else %}
+                <tr>
+                  <td colspan="{% if is_superadmin %}8{% else %}6{% endif %}" class="table-empty">
+                    Tidak ada item untuk mutasi ini.
+                  </td>
+                </tr>
+              {% endif %}
+            </tbody>
+            {% if lines %}
+            <tfoot>
+              <tr class="table-total">
+                <td colspan="3">Total Item</td>
+                <td class="numeric">{{ totals.qty_sent }}</td>
+                {% if is_superadmin %}
+                <td class="numeric">-</td>
+                <td class="numeric">{{ totals.total_harga }}</td>
+                {% endif %}
+                <td class="numeric">{{ totals.qty_received }}</td>
+                <td class="numeric">{{ totals.qty_missing }}</td>
+              </tr>
+            </tfoot>
+            {% endif %}
+          </table>
+        </div>
+        <div class="detail-footer">
+          <div class="detail-note">
+            {% if can_receive %}
+            Pastikan jumlah yang diterima sudah sesuai sebelum proses disimpan.
+            {% else %}
+            Penerimaan hanya dapat dilakukan oleh outlet penerima.
+            {% endif %}
+          </div>
+          <div class="detail-actions">
+            <button type="button" class="btn secondary" id="print-detail">Print</button>
+            {% if can_receive %}
+            <button type="submit" class="btn primary">Proses Penerimaan</button>
+            {% endif %}
+          </div>
+        </div>
+      </form>
+    </main>
+    <script>
+      window.MUTASI_DETAIL = {
+        canReceive: {{ 'true' if can_receive else 'false' }}
+      };
+    </script>
+    <script src="{{ url_for('static', path='js/mutasi_detail.js') }}"></script>
+  </body>
+</html>

@@ -872,7 +872,10 @@
         });
         if (!response.ok) {
           if (response.status === 401) {
-            window.location.href = "/login?next=/";
+            const nextUrl = encodeURIComponent(
+              `${window.location.pathname}${window.location.search}`
+            );
+            window.location.href = `/login?next=${nextUrl}`;
             return;
           }
           const payload = await response.json().catch(() => ({}));

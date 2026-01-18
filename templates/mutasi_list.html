@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Daftar Mutasi - Mutasi Barang</title>
+    <link rel="icon" href="{{ url_for('static', path='img/faviconHWGBeritaAcara.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+  </head>
+  <body>
+    {% include "partials/app_header.html" %}
+    <main class="page">
+      <div class="page-header">
+        <div class="page-title">
+          <p class="page-kicker">Mutasi Barang</p>
+          <h1>Daftar Mutasi</h1>
+          <p class="page-sub">
+            Data mutasi untuk outlet Anda dalam rentang tanggal yang dipilih.
+          </p>
+        </div>
+        <div class="page-actions">
+          <a class="btn ghost btn-sm" href="/">Kembali ke Dashboard</a>
+          <a class="btn primary" href="/mutasi/form">Buat Baru</a>
+        </div>
+      </div>
+
+      {% if message %}
+      <div class="alert {% if status == 'success' %}success{% elif status == 'warning' %}warning{% else %}error{% endif %}">
+        {{ message }}
+      </div>
+      {% endif %}
+
+      <form class="card filter-card" method="get" action="/mutasi">
+        <div class="filter-row">
+          <div class="field">
+            <label for="start">Dari Tanggal</label>
+            <input type="date" id="start" name="start" value="{{ start_date }}">
+          </div>
+          <div class="field">
+            <label for="end">Sampai Tanggal</label>
+            <input type="date" id="end" name="end" value="{{ end_date }}">
+          </div>
+          <div class="filter-actions">
+            <button type="submit" class="btn ghost btn-sm">Terapkan</button>
+          </div>
+          {% if profile and profile.outlet_name %}
+          <div class="filter-meta">
+            <span class="badge">Outlet: {{ profile.outlet_name }}</span>
+          </div>
+          {% endif %}
+        </div>
+      </form>
+
+      <section class="card table-card">
+        <div class="card-head">
+          <h2>Mutasi Terbaru</h2>
+          <span class="badge muted">{{ rows|length }} Data</span>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>No Form</th>
+                <th>Tanggal</th>
+                <th>Outlet Tujuan</th>
+                <th>Status</th>
+                <th>Dibuat Oleh</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if rows %}
+                {% for row in rows %}
+                <tr>
+                  <td>
+                    {% if row.id %}
+                    <a class="table-link" href="/mutasi/{{ row.id }}">{{ row.no_form }}</a>
+                    {% else %}
+                    {{ row.no_form }}
+                    {% endif %}
+                  </td>
+                  <td>{{ row.tanggal }}</td>
+                  <td>{{ row.outlet_penerima }}</td>
+                  <td>
+                    <span class="status-pill {{ row.status_class }}">{{ row.status_label }}</span>
+                  </td>
+                  <td>{{ row.dibuat_oleh }}</td>
+                </tr>
+                {% endfor %}
+              {% else %}
+                <tr>
+                  <td colspan="5" class="table-empty">
+                    Belum ada data mutasi pada rentang tanggal ini.
+                  </td>
+                </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

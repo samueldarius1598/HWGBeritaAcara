@@ -8,20 +8,31 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
   </head>
   <body>
-    <div class="page auth-page">
-      <div class="auth-card wide">
-        <div class="auth-header">
+    {% include "partials/app_header.html" %}
+    <main class="page">
+      <div class="page-header">
+        <div class="page-title">
+          <p class="page-kicker">Pengaturan</p>
           <h1>Profil</h1>
-          <p class="auth-sub">Perbarui informasi akun Anda.</p>
+          <p class="page-sub">Perbarui informasi akun Anda.</p>
         </div>
-
-        {% if message %}
-        <div class="alert {% if status == 'success' %}success{% else %}error{% endif %}">
-          {{ message }}
+        <div class="page-actions">
+          <a class="btn ghost btn-sm" href="/">Kembali ke Dashboard</a>
         </div>
-        {% endif %}
+      </div>
 
-        <form class="auth-form" method="post" action="/profile" id="profile-form">
+      {% if message %}
+      <div class="alert {% if status == 'success' %}success{% else %}error{% endif %}">
+        {{ message }}
+      </div>
+      {% endif %}
+
+      <form class="form" method="post" action="/profile" id="profile-form">
+        <section class="card">
+          <div class="card-head">
+            <h2>Informasi Akun</h2>
+            <span class="badge muted">Profil</span>
+          </div>
           <div class="grid grid-2">
             <div class="field">
               <label for="full_name">Nama Lengkap</label>
@@ -60,13 +71,12 @@
               <input type="text" value="{{ email }}" readonly>
             </div>
           </div>
-          <div class="auth-actions">
-            <a href="/" class="btn ghost">Kembali</a>
-            <button type="submit" class="btn primary btn-submit">Simpan</button>
-          </div>
-        </form>
-      </div>
-    </div>
+        </section>
+        <div class="auth-actions">
+          <button type="submit" class="btn primary btn-submit">Simpan</button>
+        </div>
+      </form>
+    </main>
     <script>
       window.OUTLETS = {{ outlets | tojson }};
     </script>

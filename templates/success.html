@@ -8,46 +8,26 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
   </head>
   <body>
-    <div class="page">
-      <header class="hero compact">
-        <div class="hero-main">
-          <img
-            class="hero-logo"
-            src="{{ url_for('static', path='img/faviconHWGBeritaAcara.png') }}"
-            alt="Logo"
-            loading="lazy"
-          >
-          <div>
-            <p class="hero-kicker">Cost Control Dept.</p>
-            <h1>Form Berita Acara Terkirim</h1>
-            <p class="hero-sub">
-              Terima kasih, data Anda sudah kami simpan.
-            </p>
-          </div>
+    {% include "partials/app_header.html" %}
+    <main class="page">
+      <div class="page-header">
+        <div class="page-title">
+          <p class="page-kicker">Mutasi Barang</p>
+          <h1>Form Berhasil Terkirim</h1>
+          <p class="page-sub">Terima kasih, data Anda sudah kami simpan.</p>
         </div>
-        {% if profile %}
-        <div class="hero-actions">
-          <div class="user-pill">
-            <div>{{ profile.full_name or user_email or "User" }}</div>
-            {% if profile.outlet_name %}
-            <div class="user-outlet">{{ profile.outlet_name }}</div>
-            {% endif %}
-          </div>
-          <a class="btn ghost btn-sm" href="/profile">Profil</a>
-          <form method="post" action="/logout">
-            <button type="submit" class="btn ghost btn-sm">Logout</button>
-          </form>
+        <div class="page-actions">
+          <a class="btn ghost btn-sm" href="/mutasi">Kembali ke Daftar</a>
         </div>
-        {% endif %}
-      </header>
+      </div>
 
       <section class="card success-card">
         <h2>Berhasil</h2>
         <p class="success-message">{{ message }}</p>
         <div class="success-actions">
-          <a class="btn primary" href="/">Buat Form Baru</a>
+          <a class="btn primary" href="/mutasi/form">Buat Form Baru</a>
         </div>
       </section>
-    </div>
+    </main>
   </body>
 </html>

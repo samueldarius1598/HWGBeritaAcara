@@ -1,7 +1,7 @@
 import base64
 import json
 import re
-from datetime import date
+from datetime import date, datetime, timedelta
 from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
@@ -77,6 +77,94 @@ def _parse_items(items_json):
     return items
 
 
+def _parse_date_value(raw_value, fallback):
+    if not raw_value:
+        return fallback
+    try:
+        return date.fromisoformat(str(raw_value))
+    except ValueError:
+        return fallback
+
+
+def _parse_decimal(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return 0.0
+    try:
+        return float(raw.replace(",", "."))
+    except ValueError:
+        return 0.0
+
+
+def _normalize_status(value):
+    text = str(value or "").strip().upper()
+    return text or "SENT"
+
+
+def _status_meta(status):
+    status_key = _normalize_status(status)
+    labels = {
+        "DRAFT": "Draft",
+        "SENT": "Terkirim",
+        "RECEIVED": "Diterima",
+        "PARTIAL": "Diterima Sebagian",
+    }
+    return {
+        "key": status_key,
+        "label": labels.get(status_key, status_key.title()),
+        "class": f"status-{status_key.lower()}",
+    }
+
+
+def _format_idr(value):
+    try:
+        amount = float(value or 0)
+    except (TypeError, ValueError):
+        amount = 0.0
+    formatted = f"{amount:,.2f}"
+    formatted = formatted.replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"Rp. {formatted}"
+
+
+def _format_qty(value):
+    try:
+        amount = float(value or 0)
+    except (TypeError, ValueError):
+        return "0"
+    if abs(amount - int(amount)) < 1e-6:
+        return str(int(amount))
+    formatted = f"{amount:,.2f}"
+    return formatted.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _is_superadmin_user(user):
+    if _is_superadmin(user):
+        return True
+    if not user:
+        return False
+    role = ""
+    try:
+        role = (user.app_metadata or {}).get("role", "")
+    except AttributeError:
+        role = ""
+    if not role:
+        role = (user.user_metadata or {}).get("role", "")
+    return str(role or "").strip().lower() == "superadmin"
+
+
+def _resolve_outlet_id(outlet_id, outlet_name):
+    if outlet_id not in (None, ""):
+        return str(outlet_id)
+    if not outlet_name:
+        return ""
+    target = str(outlet_name).strip().lower()
+    outlets = get_master_outlets()
+    for outlet in outlets:
+        if str(outlet.get("name", "")).strip().lower() == target:
+            return str(outlet.get("id") or "")
+    return ""
+
+
 def _normalize_outlet_id(outlet_id):
     value = str(outlet_id or "").strip()
     if not value:
@@ -148,6 +236,9 @@ def _validate_form(
 
 def _render_form(request, message=None, status=None, profile=None, user_email=None):
     outlets = get_master_outlets()
+    if user_email is None:
+        user = _get_current_user(request)
+        user_email = user.email if user else None
     return templates.TemplateResponse(
         "index.html",
         {
@@ -164,6 +255,9 @@ def _render_form(request, message=None, status=None, profile=None, user_email=No
 
 
 def _render_success(request, message, profile=None, user_email=None):
+    if user_email is None:
+        user = _get_current_user(request)
+        user_email = user.email if user else None
     return templates.TemplateResponse(
         "success.html",
         {
@@ -341,7 +435,211 @@ def _redirect_to_login(request: Request):
 
 
 @app.get("/")
-def index(request: Request):
+def dashboard(request: Request):
+    user = _get_current_user(request)
+    if not user:
+        return _redirect_to_login(request)
+    profile = _get_profile_for_user(user)
+    total_transaksi = 0
+    pending_incoming = 0
+    supabase = _get_supabase()
+    if supabase:
+        is_superadmin = _is_superadmin_user(user)
+        outlet_id = profile.get("outlet_id") if profile else None
+        outlet_name = (profile.get("outlet_name") if profile else "") or ""
+        outlet_id_value = str(outlet_id) if outlet_id not in (None, "") else ""
+        outlet_name_value = outlet_name.strip()
+
+        def _count_rows(query):
+            resp = query.execute()
+            count_value = getattr(resp, "count", None)
+            if count_value is not None:
+                return int(count_value or 0)
+            return len(resp.data or [])
+
+        try:
+            if is_superadmin and not outlet_id_value and not outlet_name_value:
+                total_transaksi = _count_rows(
+                    supabase.table("mutasi_header").select("id", count="exact")
+                )
+            else:
+                resp = None
+                if outlet_id_value:
+                    try:
+                        resp = (
+                            supabase.table("mutasi_header")
+                            .select("id", count="exact")
+                            .or_(
+                                "outlet_pengirim_id.eq."
+                                f"{outlet_id_value},outlet_penerima_id.eq.{outlet_id_value}"
+                            )
+                            .execute()
+                        )
+                        total_transaksi = int(resp.count or 0)
+                    except Exception:
+                        resp = None
+                if resp is None and outlet_name_value:
+                    total_transaksi = _count_rows(
+                        supabase.table("mutasi_header")
+                        .select("id", count="exact")
+                        .or_(
+                            "outlet_pengirim.ilike."
+                            f"{outlet_name_value},outlet_penerima.ilike.{outlet_name_value}"
+                        )
+                    )
+        except Exception:
+            total_transaksi = 0
+
+        try:
+            if is_superadmin and not outlet_id_value and not outlet_name_value:
+                pending_incoming = _count_rows(
+                    supabase.table("mutasi_header")
+                    .select("id", count="exact")
+                    .or_("status.is.null,status.neq.RECEIVED")
+                )
+            else:
+                resp = None
+                if outlet_id_value:
+                    try:
+                        resp = (
+                            supabase.table("mutasi_header")
+                            .select("id", count="exact")
+                            .eq("outlet_penerima_id", outlet_id_value)
+                            .or_("status.is.null,status.neq.RECEIVED")
+                            .execute()
+                        )
+                        pending_incoming = int(resp.count or 0)
+                    except Exception:
+                        resp = None
+                if resp is None and outlet_name_value:
+                    pending_incoming = _count_rows(
+                        supabase.table("mutasi_header")
+                        .select("id", count="exact")
+                        .ilike("outlet_penerima", outlet_name_value)
+                        .or_("status.is.null,status.neq.RECEIVED")
+                    )
+        except Exception:
+            pending_incoming = 0
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {
+            "request": request,
+            "profile": profile,
+            "user_email": user.email,
+            "total_transaksi": total_transaksi,
+            "pending_incoming": pending_incoming,
+        },
+    )
+
+
+@app.get("/mutasi")
+def mutasi_list(
+    request: Request,
+    start: str | None = None,
+    end: str | None = None,
+):
+    user = _get_current_user(request)
+    if not user:
+        return _redirect_to_login(request)
+    profile = _get_profile_for_user(user)
+    is_superadmin = _is_superadmin_user(user)
+    outlet_id = profile.get("outlet_id") if profile else None
+    outlet_name = profile.get("outlet_name") if profile else ""
+    outlet_name_value = outlet_name.strip() if outlet_name else ""
+    outlet_id_value = str(outlet_id) if outlet_id not in (None, "") else ""
+
+    today = date.today()
+    start_date = _parse_date_value(start, today - timedelta(days=14))
+    end_date = _parse_date_value(end, today)
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+
+    message = request.query_params.get("message")
+    status = request.query_params.get("status")
+    rows = []
+
+    supabase = _get_supabase()
+    if not supabase:
+        message = message or "Supabase belum dikonfigurasi."
+        status = status or "error"
+    elif not is_superadmin and not outlet_id_value and not outlet_name:
+        message = message or "Outlet Anda belum ditentukan. Perbarui profil Anda."
+        status = status or "error"
+    else:
+        try:
+            def _build_header_query():
+                return (
+                    supabase.table("mutasi_header")
+                    .select("*")
+                    .gte("tanggal", start_date.isoformat())
+                    .lte("tanggal", end_date.isoformat())
+                )
+
+            resp = None
+            if outlet_id_value and not is_superadmin:
+                try:
+                    resp = (
+                        _build_header_query().or_(
+                            "outlet_pengirim_id.eq."
+                            f"{outlet_id_value},outlet_penerima_id.eq.{outlet_id_value}"
+                        )
+                        .order("tanggal", desc=True)
+                        .execute()
+                    )
+                except Exception:
+                    resp = None
+            if resp is None or (
+                resp is not None
+                and not is_superadmin
+                and outlet_name_value
+                and not (resp.data or [])
+            ):
+                query = _build_header_query()
+                if outlet_name_value and not is_superadmin:
+                    query = query.or_(
+                        "outlet_pengirim.ilike."
+                        f"{outlet_name_value},outlet_penerima.ilike.{outlet_name_value}"
+                    )
+                resp = query.order("tanggal", desc=True).execute()
+            for row in resp.data or []:
+                dibuat_oleh = row.get("dibuat_oleh") or "-"
+                if isinstance(dibuat_oleh, list):
+                    dibuat_oleh = ", ".join(
+                        str(name) for name in dibuat_oleh if str(name).strip()
+                    )
+                status_meta = _status_meta(row.get("status"))
+                rows.append(
+                    {
+                        "id": row.get("id"),
+                        "no_form": row.get("no_form") or "-",
+                        "tanggal": row.get("tanggal") or "-",
+                        "outlet_penerima": row.get("outlet_penerima") or "-",
+                        "status_label": status_meta["label"],
+                        "status_class": status_meta["class"],
+                        "dibuat_oleh": dibuat_oleh or "-",
+                    }
+                )
+        except Exception as exc:
+            message = message or f"Gagal memuat data mutasi: {exc}"
+            status = status or "error"
+
+    return templates.TemplateResponse(
+        "mutasi_list.html",
+        {
+            "request": request,
+            "profile": profile,
+            "user_email": user.email,
+            "rows": rows,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "message": message,
+            "status": status,
+        },
+    )
+
+
+@app.get("/mutasi/form")
+def mutasi_form(request: Request):
     user = _get_current_user(request)
     if not user:
         return _redirect_to_login(request)
@@ -355,6 +653,272 @@ def index(request: Request):
         profile=profile,
         user_email=user.email,
     )
+
+
+@app.get("/mutasi/{mutasi_id}")
+def mutasi_detail(request: Request, mutasi_id: str):
+    user = _get_current_user(request)
+    if not user:
+        return _redirect_to_login(request)
+    profile = _get_profile_for_user(user)
+    is_superadmin = _is_superadmin_user(user)
+    message = request.query_params.get("message")
+    status = request.query_params.get("status")
+
+    supabase = _get_supabase()
+    if not supabase:
+        return RedirectResponse(
+            url="/mutasi?status=error&message=Supabase%20belum%20dikonfigurasi.",
+            status_code=303,
+        )
+
+    header_resp = supabase.table("mutasi_header").select("*").eq("id", mutasi_id).execute()
+    header = header_resp.data[0] if header_resp.data else None
+    if not header:
+        return RedirectResponse(
+            url="/mutasi?status=error&message=Data%20mutasi%20tidak%20ditemukan.",
+            status_code=303,
+        )
+
+    outlet_pengirim_id = _resolve_outlet_id(
+        header.get("outlet_pengirim_id"), header.get("outlet_pengirim")
+    )
+    outlet_penerima_id = _resolve_outlet_id(
+        header.get("outlet_penerima_id"), header.get("outlet_penerima")
+    )
+    user_outlet_id = (
+        str(profile.get("outlet_id")) if profile and profile.get("outlet_id") else ""
+    )
+    is_receiver = user_outlet_id and user_outlet_id == outlet_penerima_id
+
+    if not is_superadmin and user_outlet_id not in (
+        outlet_pengirim_id,
+        outlet_penerima_id,
+    ):
+        return RedirectResponse(
+            url="/mutasi?status=error&message=Akses%20ditolak.",
+            status_code=303,
+        )
+
+    status_meta = _status_meta(header.get("status"))
+    try:
+        lines_resp = (
+            supabase.table("mutasi_lines")
+            .select("*")
+            .eq("header_id", mutasi_id)
+            .eq("movement_type", "masuk")
+            .order("id", desc=False)
+            .execute()
+        )
+        lines_raw = lines_resp.data or []
+    except Exception:
+        lines_raw = []
+
+    if not lines_raw:
+        try:
+            lines_resp = (
+                supabase.table("mutasi_lines")
+                .select("*")
+                .eq("header_id", mutasi_id)
+                .order("id", desc=False)
+                .execute()
+            )
+            lines_raw = lines_resp.data or []
+        except Exception:
+            lines_raw = []
+
+    lines = []
+    total_qty_sent = 0.0
+    total_qty_received = 0.0
+    total_value = 0.0
+    for line in lines_raw:
+        qty_sent = float(line.get("qty") or 0)
+        qty_received = float(line.get("qty_received") or 0)
+        missing_qty = max(qty_sent - qty_received, 0)
+        total_qty_sent += qty_sent
+        total_qty_received += qty_received
+        line_data = {
+            "id": line.get("id"),
+            "nama_item": line.get("nama_item") or "-",
+            "kode_item": line.get("kode_item") or "-",
+            "uom": line.get("uom") or "-",
+            "qty_sent": qty_sent,
+            "qty_received": qty_received,
+            "missing_qty": missing_qty,
+        }
+        if is_superadmin:
+            harga = float(line.get("harga_cost") or 0)
+            subtotal = qty_sent * harga
+            total_value += subtotal
+            line_data["harga_display"] = _format_idr(harga)
+            line_data["subtotal_display"] = _format_idr(subtotal)
+        lines.append(line_data)
+
+    can_receive = is_receiver and status_meta["key"] != "RECEIVED"
+    receiver_name = ""
+    if profile:
+        receiver_name = profile.get("full_name") or user.email
+    totals = {
+        "qty_sent": _format_qty(total_qty_sent),
+        "qty_received": _format_qty(total_qty_received),
+        "qty_missing": _format_qty(max(total_qty_sent - total_qty_received, 0)),
+    }
+    if is_superadmin:
+        totals["total_harga"] = _format_idr(total_value)
+
+    return templates.TemplateResponse(
+        "mutasi_detail.html",
+        {
+            "request": request,
+            "profile": profile,
+            "user_email": user.email,
+            "header": header,
+            "status_meta": status_meta,
+            "lines": lines,
+            "is_superadmin": is_superadmin,
+            "can_receive": can_receive,
+            "receiver_name": receiver_name,
+            "totals": totals,
+            "message": message,
+            "status": status,
+        },
+    )
+
+
+@app.post("/mutasi/{mutasi_id}/receive")
+async def mutasi_receive(request: Request, mutasi_id: str):
+    user = _get_current_user(request)
+    if not user:
+        return _redirect_to_login(request)
+    profile = _get_profile_for_user(user)
+    user_outlet_id = (
+        str(profile.get("outlet_id")) if profile and profile.get("outlet_id") else ""
+    )
+
+    supabase = _get_supabase()
+    if not supabase:
+        return RedirectResponse(
+            url=f"/mutasi/{mutasi_id}?status=error&message=Supabase%20belum%20dikonfigurasi.",
+            status_code=303,
+        )
+
+    header_resp = supabase.table("mutasi_header").select("*").eq("id", mutasi_id).execute()
+    header = header_resp.data[0] if header_resp.data else None
+    if not header:
+        return RedirectResponse(
+            url="/mutasi?status=error&message=Data%20mutasi%20tidak%20ditemukan.",
+            status_code=303,
+        )
+
+    outlet_penerima_id = _resolve_outlet_id(
+        header.get("outlet_penerima_id"), header.get("outlet_penerima")
+    )
+    if not user_outlet_id or user_outlet_id != outlet_penerima_id:
+        return RedirectResponse(
+            url=f"/mutasi/{mutasi_id}?status=error&message=Akses%20ditolak.",
+            status_code=303,
+        )
+
+    current_status = _normalize_status(header.get("status"))
+    if current_status == "RECEIVED":
+        return RedirectResponse(
+            url=f"/mutasi/{mutasi_id}?status=warning&message=Mutasi%20ini%20sudah%20diterima.",
+            status_code=303,
+        )
+
+    lines_resp = (
+        supabase.table("mutasi_lines")
+        .select("id,qty,qty_received,movement_type")
+        .eq("header_id", mutasi_id)
+        .eq("movement_type", "masuk")
+        .order("id", desc=False)
+        .execute()
+    )
+    lines = lines_resp.data or []
+    if not lines:
+        return RedirectResponse(
+            url=f"/mutasi/{mutasi_id}?status=error&message=Data%20item%20mutasi%20tidak%20ditemukan.",
+            status_code=303,
+        )
+
+    form_data = await request.form()
+    updates = []
+    total_sent = 0.0
+    total_received = 0.0
+    errors = []
+
+    for line in lines:
+        line_id = line.get("id")
+        if not line_id:
+            errors.append("ID item mutasi tidak ditemukan.")
+            continue
+        qty_sent = float(line.get("qty") or 0)
+        raw_value = form_data.get(f"qty_received_{line_id}")
+        qty_received = _parse_decimal(raw_value)
+        if qty_received < 0:
+            errors.append("Qty terima tidak boleh minus.")
+            continue
+        if qty_received > qty_sent:
+            errors.append("Qty terima tidak boleh melebihi qty kirim.")
+            continue
+        total_sent += qty_sent
+        total_received += qty_received
+        updates.append({"id": line_id, "qty_received": qty_received})
+
+    if errors:
+        error_message = " ".join(sorted(set(errors)))
+        return RedirectResponse(
+            url=f"/mutasi/{mutasi_id}?status=error&message={quote(error_message)}",
+            status_code=303,
+        )
+
+    try:
+        if updates:
+            for payload in updates:
+                supabase.table("mutasi_lines").update(
+                    {"qty_received": payload["qty_received"]}
+                ).eq("id", payload["id"]).eq("header_id", mutasi_id).execute()
+        status_key = "RECEIVED" if abs(total_received - total_sent) < 1e-6 else "PARTIAL"
+        receiver_name = ""
+        if profile:
+            receiver_name = profile.get("full_name") or user.email
+        update_payload = {
+            "status": status_key,
+            "received_by": receiver_name or user.email,
+            "received_at": datetime.utcnow().isoformat(),
+        }
+        try:
+            supabase.table("mutasi_header").update(update_payload).eq(
+                "id", mutasi_id
+            ).execute()
+        except Exception:
+            fallback_payload = {
+                key: value
+                for key, value in update_payload.items()
+                if key not in ("received_by", "received_at")
+            }
+            supabase.table("mutasi_header").update(fallback_payload).eq(
+                "id", mutasi_id
+            ).execute()
+
+        if status_key == "PARTIAL":
+            message = (
+                "Barang diterima sebagian. Silakan buat Mutasi Baru untuk sisa barang "
+                "yang belum sampai/hilang."
+            )
+            status_flag = "warning"
+        else:
+            message = "Penerimaan berhasil diproses."
+            status_flag = "success"
+        return RedirectResponse(
+            url=f"/mutasi/{mutasi_id}?status={status_flag}&message={quote(message)}",
+            status_code=303,
+        )
+    except Exception as exc:
+        return RedirectResponse(
+            url=f"/mutasi/{mutasi_id}?status=error&message={quote(str(exc))}",
+            status_code=303,
+        )
 
 
 @app.get("/api/products")
@@ -607,6 +1171,7 @@ def profile(request: Request):
             "request": request,
             "profile": profile_data,
             "email": user.email,
+            "user_email": user.email,
             "outlets": get_master_outlets(),
         },
     )
@@ -629,6 +1194,7 @@ def profile_update(
                 "request": request,
                 "profile": _get_profile(user.id),
                 "email": user.email,
+                "user_email": user.email,
                 "message": "Supabase belum dikonfigurasi.",
                 "outlets": get_master_outlets(),
             },
@@ -643,6 +1209,7 @@ def profile_update(
                 "request": request,
                 "profile": _get_profile(user.id),
                 "email": user.email,
+                "user_email": user.email,
                 "message": "Pilih outlet dari daftar yang tersedia.",
                 "status": "error",
                 "outlets": get_master_outlets(),
@@ -669,6 +1236,7 @@ def profile_update(
                 "request": request,
                 "profile": profile_data,
                 "email": user.email,
+                "user_email": user.email,
                 "message": "Profil berhasil diperbarui.",
                 "status": "success",
                 "outlets": get_master_outlets(),
@@ -682,6 +1250,7 @@ def profile_update(
                 "request": request,
                 "profile": profile_data,
                 "email": user.email,
+                "user_email": user.email,
                 "message": f"Gagal memperbarui profil: {exc}",
                 "status": "error",
                 "outlets": get_master_outlets(),
@@ -849,8 +1418,20 @@ async def submit(
             "disetujui_oleh": disetujui_list,
             "diterima_oleh": ", ".join(diterima_list),
             "file_url": file_url,
+            "status": "SENT",
+            "outlet_pengirim_id": _normalize_outlet_id(outlet_pengirim_id),
+            "outlet_penerima_id": _normalize_outlet_id(outlet_penerima_id),
         }
-        header_resp = supabase.table("mutasi_header").insert(header_payload).execute()
+        try:
+            header_resp = supabase.table("mutasi_header").insert(header_payload).execute()
+        except Exception:
+            fallback_payload = {
+                key: value
+                for key, value in header_payload.items()
+                if key
+                not in ("status", "outlet_pengirim_id", "outlet_penerima_id")
+            }
+            header_resp = supabase.table("mutasi_header").insert(fallback_payload).execute()
         header_row = header_resp.data[0]
 
         header_payload["id"] = header_row["id"]
@@ -858,13 +1439,9 @@ async def submit(
         if lines_payload:
             supabase.table("mutasi_lines").insert(lines_payload).execute()
 
-        message = (
-            "Form Mutasi No "
-            f"{no_form.strip()} dari {outlet_pengirim} ke {outlet_penerima}, "
-            "berhasil dicatat. Terimakasih."
-        )
+        message = "Data berhasil disimpan."
         return RedirectResponse(
-            url=f"/success?message={quote(message)}",
+            url=f"/mutasi?status=success&message={quote(message)}",
             status_code=303,
         )
     except Exception as exc:
