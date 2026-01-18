@@ -1,4 +1,8 @@
-streamlit==1.53.0
+fastapi==0.115.6
+uvicorn[standard]==0.30.6
+jinja2==3.1.4
+python-multipart==0.0.9
 supabase==2.27.2
-streamlit-tags==1.2.8
 reportlab==4.2.2
+pandas==2.2.2; python_version < "3.13"
+requests==2.32.3

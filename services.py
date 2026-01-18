@@ -1,11 +1,11 @@
 import os
+import time
 import uuid
 from io import BytesIO
 from pathlib import Path
 from datetime import datetime
 import xmlrpc.client
 
-import streamlit as st
 from supabase import create_client
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -13,29 +13,40 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from config import get_setting
+
+_OUTLETS_CACHE = {"expires": 0, "data": []}
+_PRODUCTS_CACHE = {}
+
 
 def get_odoo_credentials():
     required = ["ODOO_URL", "ODOO_DB", "ODOO_USERNAME", "ODOO_PASSWORD"]
-    missing = [key for key in required if key not in st.secrets]
+    missing = [key for key in required if not get_setting(key)]
     if missing:
         return None, missing
     return {
-        "url": st.secrets["ODOO_URL"].rstrip("/"),
-        "db": st.secrets["ODOO_DB"],
-        "username": st.secrets["ODOO_USERNAME"],
-        "password": st.secrets["ODOO_PASSWORD"],
+        "url": get_setting("ODOO_URL").rstrip("/"),
+        "db": get_setting("ODOO_DB"),
+        "username": get_setting("ODOO_USERNAME"),
+        "password": get_setting("ODOO_PASSWORD"),
     }, []
 
 
-@st.cache_data(ttl=1800, show_spinner="Sedang menyiapkan daftar Outlet, mohon menunggu...")
 def get_master_outlets():
+    now = time.time()
+    if _OUTLETS_CACHE["data"] and now < _OUTLETS_CACHE["expires"]:
+        return _OUTLETS_CACHE["data"]
+
     creds, missing = get_odoo_credentials()
     if missing:
-        return [
+        outlets = [
             {"id": 1, "name": "Outlet Dummy A"},
             {"id": 2, "name": "Outlet Dummy B"},
             {"id": 3, "name": "Outlet Dummy C"},
         ]
+        _OUTLETS_CACHE["data"] = outlets
+        _OUTLETS_CACHE["expires"] = now + 1800
+        return outlets
 
     try:
         common = xmlrpc.client.ServerProxy(f"{creds['url']}/xmlrpc/2/common")
@@ -59,26 +70,37 @@ def get_master_outlets():
             for row in data
             if row.get("name")
         ]
-        return outlets or [
+        outlets = outlets or [
             {"id": 1, "name": "Outlet Dummy A"},
             {"id": 2, "name": "Outlet Dummy B"},
         ]
+        _OUTLETS_CACHE["data"] = outlets
+        _OUTLETS_CACHE["expires"] = now + 1800
+        return outlets
     except Exception:
-        return [
+        outlets = [
             {"id": 1, "name": "Outlet Dummy A"},
             {"id": 2, "name": "Outlet Dummy B"},
             {"id": 3, "name": "Outlet Dummy C"},
         ]
+        _OUTLETS_CACHE["data"] = outlets
+        _OUTLETS_CACHE["expires"] = now + 1800
+        return outlets
 
 
-@st.cache_data(ttl=1800, show_spinner=False)
 def get_master_products(company_id):
     if company_id is None:
         return []
 
+    now = time.time()
+    cache_key = str(company_id)
+    cache_entry = _PRODUCTS_CACHE.get(cache_key)
+    if cache_entry and now < cache_entry["expires"]:
+        return cache_entry["data"]
+
     creds, missing = get_odoo_credentials()
     if missing:
-        return [
+        products = [
             {
                 "id": 1,
                 "name": "Produk Dummy 1",
@@ -94,6 +116,8 @@ def get_master_products(company_id):
                 "harga": 0,
             },
         ]
+        _PRODUCTS_CACHE[cache_key] = {"expires": now + 1800, "data": products}
+        return products
 
     try:
         common = xmlrpc.client.ServerProxy(f"{creds['url']}/xmlrpc/2/common")
@@ -136,7 +160,7 @@ def get_master_products(company_id):
                     "harga": float(row.get("standard_price") or 0),
                 }
             )
-        return products or [
+        products = products or [
             {
                 "id": 1,
                 "name": "Produk Dummy 1",
@@ -145,8 +169,10 @@ def get_master_products(company_id):
                 "harga": 0,
             }
         ]
+        _PRODUCTS_CACHE[cache_key] = {"expires": now + 1800, "data": products}
+        return products
     except Exception:
-        return [
+        products = [
             {
                 "id": 1,
                 "name": "Produk Dummy 1",
@@ -162,67 +188,40 @@ def get_master_products(company_id):
                 "harga": 0,
             },
         ]
+        _PRODUCTS_CACHE[cache_key] = {"expires": now + 1800, "data": products}
+        return products
 
 
 def get_supabase_client():
-    url = st.secrets.get("SUPABASE_URL")
-    key = st.secrets.get("SUPABASE_KEY")
+    url = get_setting("SUPABASE_URL")
+    key = get_setting("SUPABASE_KEY")
     if not url or not key:
         return None
     return create_client(url, key)
 
 
-def upload_file_to_supabase(supabase, file_obj, bucket_name):
-    if not file_obj:
+def get_supabase_admin_client():
+    url = get_setting("SUPABASE_URL")
+    service_key = get_setting("SUPABASE_SERVICE_KEY") or get_setting(
+        "SUPABASE_SERVICE_ROLE_KEY"
+    )
+    if not url or not service_key:
+        return None
+    return create_client(url, service_key)
+
+
+def upload_file_to_supabase(supabase, file_bytes, file_name, content_type, bucket_name):
+    if not file_bytes or not file_name:
         return ""
-    file_ext = os.path.splitext(file_obj.name)[1].lower()
+    file_ext = os.path.splitext(file_name)[1].lower()
     file_name = f"{datetime.utcnow().strftime('%Y%m%d')}/{uuid.uuid4().hex}{file_ext}"
-    file_bytes = file_obj.getvalue()
     supabase.storage.from_(bucket_name).upload(
         file_name,
         file_bytes,
-        {"content-type": file_obj.type or "application/octet-stream"},
+        {"content-type": content_type or "application/octet-stream"},
     )
     public_url = supabase.storage.from_(bucket_name).get_public_url(file_name)
     return public_url
-
-
-def ensure_items_state():
-    if "items" not in st.session_state:
-        st.session_state["items"] = [
-            {
-                "product_name": "",
-                "kode_item": "",
-                "uom": "",
-                "qty": 0.0,
-                "harga": 0.0,
-            }
-        ]
-
-
-def add_item_row():
-    st.session_state["items"].append(
-        {
-            "product_name": "",
-            "kode_item": "",
-            "uom": "",
-            "qty": 0.0,
-            "harga": 0.0,
-        }
-    )
-
-
-def remove_item_row(index):
-    if len(st.session_state["items"]) <= 1:
-        st.session_state["items"][0] = {
-            "product_name": "",
-            "kode_item": "",
-            "uom": "",
-            "qty": 0.0,
-            "harga": 0.0,
-        }
-        return
-    st.session_state["items"].pop(index)
 
 
 def build_line_payload(items, header):
@@ -259,13 +258,6 @@ def build_line_payload(items, header):
     return lines
 
 
-def reset_form_state():
-    outlet_pengirim = st.session_state.get("outlet_pengirim", "")
-    st.session_state.clear()
-    if outlet_pengirim:
-        st.session_state["outlet_pengirim"] = outlet_pengirim
-
-
 def build_mutasi_pdf(
     no_form,
     tanggal,
@@ -275,7 +267,7 @@ def build_mutasi_pdf(
     disetujui_oleh,
     diterima_oleh,
     items,
-    file_obj=None,
+    file_name=None,
     logo_path=None,
 ):
     def safe_text(value):
@@ -391,15 +383,7 @@ def build_mutasi_pdf(
     elements.append(Spacer(1, 10))
 
     elements.append(Paragraph("Detail Item", section_style))
-    item_rows = [
-        [
-            "No",
-            "Nama Item",
-            "Kode Item",
-            "Satuan",
-            "Qty",
-        ]
-    ]
+    item_rows = [["No", "Nama Item", "Kode Item", "Satuan", "Qty"]]
     total_qty = 0.0
     row_index = 1
     for item in items or []:
@@ -422,15 +406,7 @@ def build_mutasi_pdf(
     if len(item_rows) == 1:
         item_rows.append(["-", "Belum ada item", "-", "-", "-"])
 
-    item_rows.append(
-        [
-            "",
-            "",
-            "",
-            "Total",
-            format_qty(total_qty),
-        ]
-    )
+    item_rows.append(["", "", "", "Total", format_qty(total_qty)])
 
     item_table = Table(
         item_rows,
@@ -458,7 +434,10 @@ def build_mutasi_pdf(
 
     elements.append(Paragraph("Personel", section_style))
     personel_data = [
-        [Paragraph("Dibuat Oleh", muted_style), Paragraph(join_names(dibuat_oleh), body_style)],
+        [
+            Paragraph("Dibuat Oleh", muted_style),
+            Paragraph(join_names(dibuat_oleh), body_style),
+        ],
         [
             Paragraph("Disetujui Oleh", muted_style),
             Paragraph(join_names(disetujui_oleh), body_style),
@@ -469,7 +448,7 @@ def build_mutasi_pdf(
         ],
         [
             Paragraph("Lampiran", muted_style),
-            Paragraph(safe_text(file_obj.name if file_obj else "-"), body_style),
+            Paragraph(safe_text(file_name or "-"), body_style),
         ],
     ]
     personel_table = Table(personel_data, colWidths=[30 * mm, 130 * mm])

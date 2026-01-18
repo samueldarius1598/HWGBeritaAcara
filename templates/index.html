@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Form Berita Acara [Mutasi &amp; Biaya Lainnya]</title>
+    <link rel="icon" href="{{ url_for('static', path='img/faviconHWGBeritaAcara.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+  </head>
+  <body>
+    <div class="page">
+      <header class="hero">
+        <div class="hero-main">
+          <img
+            class="hero-logo"
+            src="{{ url_for('static', path='img/faviconHWGBeritaAcara.png') }}"
+            alt="Logo"
+            loading="lazy"
+          >
+          <div>
+            <p class="hero-kicker">Cost Control Dept.</p>
+            <h1>Form Berita Acara [Mutasi &amp; Biaya Lainnya]</h1>
+            <p class="hero-sub">
+              Dikelola dan diperiksa sepenuhnya oleh Cost Control Dept.
+            </p>
+            <div class="hero-meta">
+              <span class="hero-chip">Mutasi &amp; Biaya Lainnya</span>
+              <span class="hero-note">
+                Pastikan data outlet, item, dan personel sudah lengkap.
+              </span>
+            </div>
+          </div>
+        </div>
+        {% if profile %}
+        <div class="hero-actions">
+          <div class="user-pill">
+            <div>{{ profile.full_name or user_email or "User" }}</div>
+            {% if profile.outlet_name %}
+            <div class="user-outlet">{{ profile.outlet_name }}</div>
+            {% endif %}
+          </div>
+          <a class="btn ghost btn-sm" href="/profile">Profil</a>
+          <form method="post" action="/logout">
+            <button type="submit" class="btn ghost btn-sm">Logout</button>
+          </form>
+        </div>
+        {% endif %}
+      </header>
+
+      {% if message %}
+      <div class="alert {% if status == 'success' %}success{% else %}error{% endif %}">
+        {{ message }}
+      </div>
+      {% endif %}
+
+      <form
+        id="mutasi-form"
+        class="form"
+        action="/submit"
+        method="post"
+        enctype="multipart/form-data"
+        data-max-upload="{{ max_upload_mb }}"
+      >
+        <section class="card">
+          <div class="card-head">
+            <h2>Informasi Umum</h2>
+            <span class="badge">Wajib diisi</span>
+          </div>
+          <div class="grid grid-4">
+            <div class="field">
+              <label for="no_form">No Form</label>
+              <input
+                type="text"
+                id="no_form"
+                name="no_form"
+                placeholder="Contoh: 001598"
+                required
+              >
+            </div>
+            <div class="field">
+              <label for="outlet_pengirim_name">Outlet Pengirim</label>
+              <div class="ac-wrap outlet-wrap">
+                <input
+                  type="text"
+                  id="outlet_pengirim_name"
+                  class="text-input outlet-input"
+                  placeholder="Cari outlet pengirim..."
+                  autocomplete="off"
+                  value="{{ profile.outlet_name if profile else '' }}"
+                  data-locked="{% if profile and profile.outlet_id %}true{% else %}false{% endif %}"
+                  {% if profile and profile.outlet_id %}readonly{% endif %}
+                  required
+                >
+                <input
+                  type="hidden"
+                  id="outlet_pengirim"
+                  name="outlet_pengirim_id"
+                  value="{{ profile.outlet_id if profile and profile.outlet_id is not none else '' }}"
+                >
+                <div class="ac-list" data-for="pengirim" hidden></div>
+              </div>
+            </div>
+            <div class="field">
+              <label for="outlet_penerima_name">Outlet Penerima</label>
+              <div class="ac-wrap outlet-wrap">
+                <input
+                  type="text"
+                  id="outlet_penerima_name"
+                  class="text-input outlet-input"
+                  placeholder="Cari outlet penerima..."
+                  autocomplete="off"
+                  required
+                >
+                <input type="hidden" id="outlet_penerima" name="outlet_penerima_id">
+                <div class="ac-list" data-for="penerima" hidden></div>
+              </div>
+            </div>
+            <div class="field">
+              <label for="tanggal">Tanggal Kirim</label>
+              <input
+                type="date"
+                id="tanggal"
+                name="tanggal"
+                value="{{ today }}"
+                required
+              >
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>Detail Item</h2>
+            <span class="badge muted">Dinamis</span>
+          </div>
+          <div class="items-toolbar">
+            <p class="items-hint" id="items-loading">Pilih outlet pengirim untuk memuat produk.</p>
+          </div>
+          <div class="items-body" id="items-body"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>Personel &amp; Upload</h2>
+            <span class="badge">Wajib diisi</span>
+          </div>
+          <div class="grid grid-3">
+            <div class="field">
+              <label for="dibuat_oleh_input">Dibuat Oleh</label>
+              <div class="tag-input">
+                <input
+                  type="text"
+                  id="dibuat_oleh_input"
+                  class="tag-entry"
+                  placeholder="Ketik nama lalu Enter"
+                  autocomplete="off"
+                >
+                <input type="hidden" id="dibuat_oleh" name="dibuat_oleh">
+              </div>
+            </div>
+            <div class="field">
+              <label for="disetujui_oleh_input">Disetujui Oleh</label>
+              <div class="tag-input">
+                <input
+                  type="text"
+                  id="disetujui_oleh_input"
+                  class="tag-entry"
+                  placeholder="Ketik nama lalu Enter"
+                  autocomplete="off"
+                >
+                <input type="hidden" id="disetujui_oleh" name="disetujui_oleh">
+              </div>
+            </div>
+            <div class="field">
+              <label for="diterima_oleh_input">Diterima Oleh</label>
+              <div class="tag-input">
+                <input
+                  type="text"
+                  id="diterima_oleh_input"
+                  class="tag-entry"
+                  placeholder="Ketik nama lalu Enter"
+                  autocomplete="off"
+                >
+                <input type="hidden" id="diterima_oleh" name="diterima_oleh">
+              </div>
+            </div>
+          </div>
+          <div class="field upload-field">
+            <label for="file_upload">Upload Gambar Form (JPG, PNG, PDF)</label>
+            <div class="drop-zone" id="drop-zone">
+              <div class="drop-zone-text">
+                <strong>Seret &amp; lepas</strong> file ke sini atau klik untuk memilih.
+              </div>
+              <div class="drop-zone-sub">
+                JPG, PNG, PDF. Maks {{ max_upload_mb }}MB.
+              </div>
+              <input
+                type="file"
+                id="file_upload"
+                name="file_upload"
+                accept=".jpg,.jpeg,.png,.pdf"
+              >
+            </div>
+            <div class="upload-preview" id="upload-preview"></div>
+          </div>
+        </section>
+
+        <section class="actions">
+          <div class="actions-main">
+            <button type="submit" class="btn primary btn-submit">
+              <img
+                class="btn-icon"
+                src="{{ url_for('static', path='img/iconSubmit.png') }}"
+                alt=""
+                aria-hidden="true"
+              >
+              Submit
+            </button>
+            <button
+              type="button"
+              class="btn secondary btn-print"
+              id="print-button"
+            >
+              <img
+                class="btn-icon"
+                src="{{ url_for('static', path='img/iconPrint.png') }}"
+                alt=""
+                aria-hidden="true"
+              >
+              Print
+            </button>
+            <button type="reset" class="btn ghost btn-reset" id="reset-button">
+              <img
+                class="btn-icon"
+                src="{{ url_for('static', path='img/iconReset.png') }}"
+                alt=""
+                aria-hidden="true"
+              >
+              Reset
+            </button>
+          </div>
+          <div class="actions-meta">
+            <div id="form-alert" class="alert inline hidden"></div>
+            <p class="actions-note">
+              Pastikan data sudah benar sebelum submit.
+            </p>
+          </div>
+        </section>
+
+        <input type="hidden" name="items_json" id="items-json">
+      </form>
+    </div>
+
+    <div class="modal hidden" id="pdf-modal" aria-hidden="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="pdf-modal-title">
+        <div class="modal-header">
+          <h3 id="pdf-modal-title">Pratinjau Form Mutasi</h3>
+          <button type="button" class="btn ghost modal-close" data-close="true">Tutup</button>
+        </div>
+        <div class="modal-body">
+          <div class="pdf-status" id="pdf-status">Memuat pratinjau PDF...</div>
+          <div class="preview-canvas-wrap">
+            <canvas id="pdf-canvas"></canvas>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <a class="btn secondary" id="pdf-download" href="#" download>Unduh PDF</a>
+        </div>
+      </div>
+    </div>
+
+    <template id="item-row-template">
+      <div class="item-row">
+        <div class="field">
+          <label>Nama Item</label>
+          <div class="ac-wrap product-wrap">
+            <input
+              type="text"
+              class="product-input"
+              placeholder="Ketik nama item..."
+              autocomplete="off"
+            >
+            <div class="ac-list" hidden></div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Kode Item</label>
+          <input type="text" class="item-kode" readonly>
+        </div>
+        <div class="field">
+          <label>Satuan</label>
+          <input type="text" class="item-uom" readonly>
+        </div>
+        <div class="field">
+          <label class="label-with-tip">
+            Kuantiti
+            <span class="tip" aria-label="Pakai koma untuk desimal (contoh: 1,25)">?</span>
+          </label>
+          <input
+            type="text"
+            class="item-qty"
+            inputmode="decimal"
+            placeholder="0,00"
+            value="0"
+          >
+        </div>
+        <div class="item-row-actions">
+          <button type="button" class="btn add add-row-inline">Tambah Baris</button>
+          <button type="button" class="btn danger remove-row">Hapus</button>
+        </div>
+      </div>
+    </template>
+
+    <script>
+      window.OUTLETS = {{ outlets | tojson }};
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script src="{{ url_for('static', path='js/script.js') }}"></script>
+  </body>
+</html>

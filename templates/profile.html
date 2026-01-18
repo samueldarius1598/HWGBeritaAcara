@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Profil - Form Berita Acara</title>
+    <link rel="icon" href="{{ url_for('static', path='img/faviconHWGBeritaAcara.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+  </head>
+  <body>
+    <div class="page auth-page">
+      <div class="auth-card wide">
+        <div class="auth-header">
+          <h1>Profil</h1>
+          <p class="auth-sub">Perbarui informasi akun Anda.</p>
+        </div>
+
+        {% if message %}
+        <div class="alert {% if status == 'success' %}success{% else %}error{% endif %}">
+          {{ message }}
+        </div>
+        {% endif %}
+
+        <form class="auth-form" method="post" action="/profile" id="profile-form">
+          <div class="grid grid-2">
+            <div class="field">
+              <label for="full_name">Nama Lengkap</label>
+              <input
+                type="text"
+                id="full_name"
+                name="full_name"
+                value="{{ profile.full_name if profile else '' }}"
+                required
+              >
+            </div>
+            <div class="field">
+              <label for="outlet_name">Nama Outlet</label>
+              <div class="ac-wrap outlet-wrap">
+                <input
+                  type="text"
+                  id="outlet_name"
+                  name="outlet_name"
+                  class="text-input outlet-input"
+                  value="{{ profile.outlet_name if profile else '' }}"
+                  placeholder="Cari outlet..."
+                  autocomplete="off"
+                  required
+                >
+                <input
+                  type="hidden"
+                  id="outlet_id"
+                  name="outlet_id"
+                  value="{{ profile.outlet_id if profile and profile.outlet_id is not none else '' }}"
+                >
+                <div class="ac-list" hidden></div>
+              </div>
+            </div>
+            <div class="field">
+              <label>Email</label>
+              <input type="text" value="{{ email }}" readonly>
+            </div>
+          </div>
+          <div class="auth-actions">
+            <a href="/" class="btn ghost">Kembali</a>
+            <button type="submit" class="btn primary btn-submit">Simpan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <script>
+      window.OUTLETS = {{ outlets | tojson }};
+    </script>
+    <script src="{{ url_for('static', path='js/auth.js') }}"></script>
+  </body>
+</html>
