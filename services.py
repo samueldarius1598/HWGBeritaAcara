@@ -1,6 +1,7 @@
 import os
 import time
 import uuid
+from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from datetime import datetime
@@ -14,6 +15,9 @@ from reportlab.lib.units import mm
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from config import get_setting
+
+OUTLETS_CACHE_TTL = 300
+PRODUCTS_CACHE_TTL = 1800
 
 _OUTLETS_CACHE = {"expires": 0, "data": []}
 _PRODUCTS_CACHE = {}
@@ -45,7 +49,7 @@ def get_master_outlets():
             {"id": 3, "name": "Outlet Dummy C"},
         ]
         _OUTLETS_CACHE["data"] = outlets
-        _OUTLETS_CACHE["expires"] = now + 1800
+        _OUTLETS_CACHE["expires"] = now + OUTLETS_CACHE_TTL
         return outlets
 
     try:
@@ -75,7 +79,7 @@ def get_master_outlets():
             {"id": 2, "name": "Outlet Dummy B"},
         ]
         _OUTLETS_CACHE["data"] = outlets
-        _OUTLETS_CACHE["expires"] = now + 1800
+        _OUTLETS_CACHE["expires"] = now + OUTLETS_CACHE_TTL
         return outlets
     except Exception:
         outlets = [
@@ -84,7 +88,7 @@ def get_master_outlets():
             {"id": 3, "name": "Outlet Dummy C"},
         ]
         _OUTLETS_CACHE["data"] = outlets
-        _OUTLETS_CACHE["expires"] = now + 1800
+        _OUTLETS_CACHE["expires"] = now + OUTLETS_CACHE_TTL
         return outlets
 
 
@@ -116,7 +120,7 @@ def get_master_products(company_id):
                 "harga": 0,
             },
         ]
-        _PRODUCTS_CACHE[cache_key] = {"expires": now + 1800, "data": products}
+        _PRODUCTS_CACHE[cache_key] = {"expires": now + PRODUCTS_CACHE_TTL, "data": products}
         return products
 
     try:
@@ -169,7 +173,7 @@ def get_master_products(company_id):
                 "harga": 0,
             }
         ]
-        _PRODUCTS_CACHE[cache_key] = {"expires": now + 1800, "data": products}
+        _PRODUCTS_CACHE[cache_key] = {"expires": now + PRODUCTS_CACHE_TTL, "data": products}
         return products
     except Exception:
         products = [
@@ -188,10 +192,11 @@ def get_master_products(company_id):
                 "harga": 0,
             },
         ]
-        _PRODUCTS_CACHE[cache_key] = {"expires": now + 1800, "data": products}
+        _PRODUCTS_CACHE[cache_key] = {"expires": now + PRODUCTS_CACHE_TTL, "data": products}
         return products
 
 
+@lru_cache()
 def get_supabase_client():
     url = get_setting("SUPABASE_URL")
     key = get_setting("SUPABASE_KEY")
@@ -200,6 +205,7 @@ def get_supabase_client():
     return create_client(url, key)
 
 
+@lru_cache()
 def get_supabase_admin_client():
     url = get_setting("SUPABASE_URL")
     service_key = get_setting("SUPABASE_SERVICE_KEY") or get_setting(

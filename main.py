@@ -4,7 +4,8 @@ import re
 from datetime import date, datetime, timedelta
 from urllib.parse import quote
 
-from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -333,11 +334,12 @@ def _clear_auth_cookie(response):
     response.delete_cookie(AUTH_COOKIE_NAME, path="/")
 
 
-def _get_current_user(request: Request):
+def _get_current_user(request: Request, supabase=None):
     token = request.cookies.get(AUTH_COOKIE_NAME)
     if not token:
         return None
-    supabase = _get_supabase()
+    if supabase is None:
+        supabase = _get_supabase()
     if not supabase:
         return None
     try:
@@ -788,32 +790,56 @@ def mutasi_detail(request: Request, mutasi_id: str):
 
 
 @app.post("/mutasi/{mutasi_id}/receive")
-async def mutasi_receive(request: Request, mutasi_id: str):
-    user = _get_current_user(request)
+async def mutasi_receive(
+    request: Request,
+    mutasi_id: str,
+    supabase=Depends(get_supabase_client),
+):
+    user = await run_in_threadpool(_get_current_user, request, supabase)
     if not user:
         return _redirect_to_login(request)
-    profile = _get_profile_for_user(user)
+    profile = await run_in_threadpool(_get_profile_for_user, user)
     user_outlet_id = (
         str(profile.get("outlet_id")) if profile and profile.get("outlet_id") else ""
     )
 
-    supabase = _get_supabase()
     if not supabase:
         return RedirectResponse(
             url=f"/mutasi/{mutasi_id}?status=error&message=Supabase%20belum%20dikonfigurasi.",
             status_code=303,
         )
 
-    header_resp = supabase.table("mutasi_header").select("*").eq("id", mutasi_id).execute()
-    header = header_resp.data[0] if header_resp.data else None
+    def _fetch_header_and_lines():
+        header_resp = (
+            supabase.table("mutasi_header")
+            .select("*")
+            .eq("id", mutasi_id)
+            .execute()
+        )
+        header = header_resp.data[0] if header_resp.data else None
+        if not header:
+            return None, []
+        lines_resp = (
+            supabase.table("mutasi_lines")
+            .select("id,qty,qty_received,movement_type")
+            .eq("header_id", mutasi_id)
+            .eq("movement_type", "masuk")
+            .order("id", desc=False)
+            .execute()
+        )
+        return header, lines_resp.data or []
+
+    header, lines = await run_in_threadpool(_fetch_header_and_lines)
     if not header:
         return RedirectResponse(
             url="/mutasi?status=error&message=Data%20mutasi%20tidak%20ditemukan.",
             status_code=303,
         )
 
-    outlet_penerima_id = _resolve_outlet_id(
-        header.get("outlet_penerima_id"), header.get("outlet_penerima")
+    outlet_penerima_id = await run_in_threadpool(
+        _resolve_outlet_id,
+        header.get("outlet_penerima_id"),
+        header.get("outlet_penerima"),
     )
     if not user_outlet_id or user_outlet_id != outlet_penerima_id:
         return RedirectResponse(
@@ -828,15 +854,6 @@ async def mutasi_receive(request: Request, mutasi_id: str):
             status_code=303,
         )
 
-    lines_resp = (
-        supabase.table("mutasi_lines")
-        .select("id,qty,qty_received,movement_type")
-        .eq("header_id", mutasi_id)
-        .eq("movement_type", "masuk")
-        .order("id", desc=False)
-        .execute()
-    )
-    lines = lines_resp.data or []
     if not lines:
         return RedirectResponse(
             url=f"/mutasi/{mutasi_id}?status=error&message=Data%20item%20mutasi%20tidak%20ditemukan.",
@@ -874,53 +891,57 @@ async def mutasi_receive(request: Request, mutasi_id: str):
             status_code=303,
         )
 
-    try:
+    status_key = "RECEIVED" if abs(total_received - total_sent) < 1e-6 else "PARTIAL"
+    receiver_name = ""
+    if profile:
+        receiver_name = profile.get("full_name") or user.email
+    update_payload = {
+        "status": status_key,
+        "received_by": receiver_name or user.email,
+        "received_at": datetime.utcnow().isoformat(),
+    }
+    fallback_payload = {
+        key: value
+        for key, value in update_payload.items()
+        if key not in ("received_by", "received_at")
+    }
+
+    def _apply_updates():
         if updates:
             for payload in updates:
                 supabase.table("mutasi_lines").update(
                     {"qty_received": payload["qty_received"]}
                 ).eq("id", payload["id"]).eq("header_id", mutasi_id).execute()
-        status_key = "RECEIVED" if abs(total_received - total_sent) < 1e-6 else "PARTIAL"
-        receiver_name = ""
-        if profile:
-            receiver_name = profile.get("full_name") or user.email
-        update_payload = {
-            "status": status_key,
-            "received_by": receiver_name or user.email,
-            "received_at": datetime.utcnow().isoformat(),
-        }
         try:
             supabase.table("mutasi_header").update(update_payload).eq(
                 "id", mutasi_id
             ).execute()
         except Exception:
-            fallback_payload = {
-                key: value
-                for key, value in update_payload.items()
-                if key not in ("received_by", "received_at")
-            }
             supabase.table("mutasi_header").update(fallback_payload).eq(
                 "id", mutasi_id
             ).execute()
 
-        if status_key == "PARTIAL":
-            message = (
-                "Barang diterima sebagian. Silakan buat Mutasi Baru untuk sisa barang "
-                "yang belum sampai/hilang."
-            )
-            status_flag = "warning"
-        else:
-            message = "Penerimaan berhasil diproses."
-            status_flag = "success"
-        return RedirectResponse(
-            url=f"/mutasi/{mutasi_id}?status={status_flag}&message={quote(message)}",
-            status_code=303,
-        )
+    try:
+        await run_in_threadpool(_apply_updates)
     except Exception as exc:
         return RedirectResponse(
             url=f"/mutasi/{mutasi_id}?status=error&message={quote(str(exc))}",
             status_code=303,
         )
+
+    if status_key == "PARTIAL":
+        message = (
+            "Barang diterima sebagian. Silakan buat Mutasi Baru untuk sisa barang "
+            "yang belum sampai/hilang."
+        )
+        status_flag = "warning"
+    else:
+        message = "Penerimaan berhasil diproses."
+        status_flag = "success"
+    return RedirectResponse(
+        url=f"/mutasi/{mutasi_id}?status={status_flag}&message={quote(message)}",
+        status_code=303,
+    )
 
 
 @app.get("/api/products")
@@ -1273,11 +1294,12 @@ async def preview(
     diterima_oleh: str = Form(""),
     items_json: str = Form(""),
     file_upload: UploadFile | None = File(None),
+    supabase=Depends(get_supabase_client),
 ):
-    user = _get_current_user(request)
+    user = await run_in_threadpool(_get_current_user, request, supabase)
     if not user:
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
-    profile = _get_profile_for_user(user)
+    profile = await run_in_threadpool(_get_profile_for_user, user)
     locked_outlet_id = profile.get("outlet_id") if profile else None
     if locked_outlet_id not in (None, ""):
         outlet_pengirim_id = str(locked_outlet_id)
@@ -1286,7 +1308,8 @@ async def preview(
     diterima_list = _parse_names(diterima_oleh)
     disetujui_list = _parse_names(disetujui_oleh)
 
-    valid, message = _validate_form(
+    valid, message = await run_in_threadpool(
+        _validate_form,
         no_form.strip(),
         outlet_pengirim_id,
         outlet_penerima_id,
@@ -1298,7 +1321,7 @@ async def preview(
     if not valid:
         return JSONResponse({"error": message}, status_code=400)
 
-    outlets = get_master_outlets()
+    outlets = await run_in_threadpool(get_master_outlets)
     outlet_map = {
         str(outlet["id"]): outlet["name"]
         for outlet in outlets
@@ -1311,7 +1334,8 @@ async def preview(
     pdf_file_name = f"Form-Mutasi-{safe_no_form}.pdf"
 
     try:
-        pdf_bytes = build_mutasi_pdf(
+        pdf_bytes = await run_in_threadpool(
+            build_mutasi_pdf,
             no_form=no_form.strip(),
             tanggal=tanggal,
             outlet_pengirim=outlet_pengirim,
@@ -1349,11 +1373,12 @@ async def submit(
     diterima_oleh: str = Form(""),
     items_json: str = Form(""),
     file_upload: UploadFile | None = File(None),
+    supabase=Depends(get_supabase_client),
 ):
-    user = _get_current_user(request)
+    user = await run_in_threadpool(_get_current_user, request, supabase)
     if not user:
         return _redirect_to_login(request)
-    profile = _get_profile_for_user(user)
+    profile = await run_in_threadpool(_get_profile_for_user, user)
     locked_outlet_id = profile.get("outlet_id") if profile else None
     if locked_outlet_id not in (None, ""):
         outlet_pengirim_id = str(locked_outlet_id)
@@ -1362,7 +1387,8 @@ async def submit(
     diterima_list = _parse_names(diterima_oleh)
     disetujui_list = _parse_names(disetujui_oleh)
 
-    valid, message = _validate_form(
+    valid, message = await run_in_threadpool(
+        _validate_form,
         no_form.strip(),
         outlet_pengirim_id,
         outlet_penerima_id,
@@ -1372,9 +1398,16 @@ async def submit(
         items,
     )
     if not valid:
-        return _render_form(request, message=message, status="error")
+        return await run_in_threadpool(
+            _render_form,
+            request,
+            message=message,
+            status="error",
+            profile=profile,
+            user_email=user.email,
+        )
 
-    outlets = get_master_outlets()
+    outlets = await run_in_threadpool(get_master_outlets)
     outlet_map = {
         str(outlet["id"]): outlet["name"]
         for outlet in outlets
@@ -1383,12 +1416,14 @@ async def submit(
     outlet_pengirim = outlet_map.get(outlet_pengirim_id, "")
     outlet_penerima = outlet_map.get(outlet_penerima_id, "")
 
-    supabase = get_supabase_client()
     if not supabase:
-        return _render_form(
+        return await run_in_threadpool(
+            _render_form,
             request,
             message="Supabase belum dikonfigurasi. Lengkapi SUPABASE_URL dan SUPABASE_KEY.",
             status="error",
+            profile=profile,
+            user_email=user.email,
         )
 
     file_bytes = b""
@@ -1397,49 +1432,59 @@ async def submit(
     if file_upload:
         original_name = file_upload.filename or ""
         content_type = file_upload.content_type or ""
-        file_bytes = await file_upload.read()
+        file_bytes = await run_in_threadpool(file_upload.file.read)
         if len(file_bytes) > MAX_UPLOAD_MB * 1024 * 1024:
-            return _render_form(
+            return await run_in_threadpool(
+                _render_form,
                 request,
                 message=f"Ukuran file melebihi {MAX_UPLOAD_MB}MB.",
                 status="error",
+                profile=profile,
+                user_email=user.email,
             )
 
     try:
         bucket_name = get_setting("SUPABASE_BUCKET", "mutasi-files")
-        file_url = upload_file_to_supabase(
-            supabase, file_bytes, original_name, content_type, bucket_name
-        )
+        def _process_submission():
+            file_url = upload_file_to_supabase(
+                supabase, file_bytes, original_name, content_type, bucket_name
+            )
 
-        header_payload = {
-            "no_form": no_form.strip(),
-            "tanggal": tanggal,
-            "outlet_pengirim": outlet_pengirim,
-            "outlet_penerima": outlet_penerima,
-            "dibuat_oleh": ", ".join(dibuat_list),
-            "disetujui_oleh": disetujui_list,
-            "diterima_oleh": ", ".join(diterima_list),
-            "file_url": file_url,
-            "status": "SENT",
-            "outlet_pengirim_id": _normalize_outlet_id(outlet_pengirim_id),
-            "outlet_penerima_id": _normalize_outlet_id(outlet_penerima_id),
-        }
-        try:
-            header_resp = supabase.table("mutasi_header").insert(header_payload).execute()
-        except Exception:
-            fallback_payload = {
-                key: value
-                for key, value in header_payload.items()
-                if key
-                not in ("status", "outlet_pengirim_id", "outlet_penerima_id")
+            header_payload = {
+                "no_form": no_form.strip(),
+                "tanggal": tanggal,
+                "outlet_pengirim": outlet_pengirim,
+                "outlet_penerima": outlet_penerima,
+                "dibuat_oleh": ", ".join(dibuat_list),
+                "disetujui_oleh": disetujui_list,
+                "diterima_oleh": ", ".join(diterima_list),
+                "file_url": file_url,
+                "status": "SENT",
+                "outlet_pengirim_id": _normalize_outlet_id(outlet_pengirim_id),
+                "outlet_penerima_id": _normalize_outlet_id(outlet_penerima_id),
             }
-            header_resp = supabase.table("mutasi_header").insert(fallback_payload).execute()
-        header_row = header_resp.data[0]
+            try:
+                header_resp = (
+                    supabase.table("mutasi_header").insert(header_payload).execute()
+                )
+            except Exception:
+                fallback_payload = {
+                    key: value
+                    for key, value in header_payload.items()
+                    if key
+                    not in ("status", "outlet_pengirim_id", "outlet_penerima_id")
+                }
+                header_resp = (
+                    supabase.table("mutasi_header").insert(fallback_payload).execute()
+                )
+            header_row = header_resp.data[0]
 
-        header_payload["id"] = header_row["id"]
-        lines_payload = build_line_payload(items, header_payload)
-        if lines_payload:
-            supabase.table("mutasi_lines").insert(lines_payload).execute()
+            header_payload["id"] = header_row["id"]
+            lines_payload = build_line_payload(items, header_payload)
+            if lines_payload:
+                supabase.table("mutasi_lines").insert(lines_payload).execute()
+
+        await run_in_threadpool(_process_submission)
 
         message = "Data berhasil disimpan."
         return RedirectResponse(
@@ -1447,4 +1492,11 @@ async def submit(
             status_code=303,
         )
     except Exception as exc:
-        return _render_form(request, message=f"Gagal menyimpan data: {exc}", status="error")
+        return await run_in_threadpool(
+            _render_form,
+            request,
+            message=f"Gagal menyimpan data: {exc}",
+            status="error",
+            profile=profile,
+            user_email=user.email,
+        )
