@@ -1,0 +1,109 @@
+<header class="app-header" data-user-name="{{ profile.full_name or user_email or '' }}">
+  <div class="app-header-inner">
+    <a class="app-brand" href="/">
+      <img
+        class="app-brand-icon"
+        src="{{ url_for('static', path='img/hwgIcon.png') }}"
+        alt="HWG"
+        loading="lazy"
+      >
+      <div class="app-brand-text">
+        <span class="app-kicker">Cost Control Dept.</span>
+        <span class="app-name">CC's Smart App HWG</span>
+      </div>
+      <img
+        class="app-logo app-logo-tight"
+        src="{{ url_for('static', path='img/faviconHWGBeritaAcara.png') }}"
+        alt="Logo"
+        loading="lazy"
+      >
+    </a>
+    {% if profile %}
+    <div class="app-user">
+      <div class="user-meta">
+        <span class="user-outlet">{{ profile.outlet_name or "Outlet belum diisi" }}</span>
+        <span class="user-name">{{ profile.full_name or user_email or "User" }}</span>
+      </div>
+      <details class="user-menu">
+        <summary>
+          <span>Menu</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M12 15.5 6 9.5l1.4-1.4L12 12.7l4.6-4.6 1.4 1.4-6 6Z"></path>
+          </svg>
+        </summary>
+        <div class="user-menu-card">
+          <a href="/profile">Profile</a>
+          <form method="post" action="/logout">
+            <button type="submit">Logout</button>
+          </form>
+        </div>
+      </details>
+    </div>
+    {% endif %}
+  </div>
+</header>
+{% if profile or user_email %}
+<div id="welcome-overlay" class="welcome-overlay" role="dialog" aria-modal="true" hidden>
+  <div class="welcome-card">
+    <div class="icon-circle" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 6L9 17l-5-5"></path>
+      </svg>
+    </div>
+    <div class="content-text">
+      <h3 class="welcome-title">Login Successful!</h3>
+      <p class="welcome-name" id="welcome-user-name">Welcome back</p>
+    </div>
+    <button type="button" class="btn-continue" id="welcome-ok">Continue to App</button>
+    <div class="progress-bar-container" aria-hidden="true">
+      <div class="progress-bar-fill"></div>
+    </div>
+  </div>
+</div>
+<script>
+  (function () {
+    const overlay = document.getElementById("welcome-overlay");
+    if (!overlay) {
+      return;
+    }
+    let url;
+    try {
+      url = new URL(window.location.href);
+    } catch (error) {
+      overlay.remove();
+      return;
+    }
+    if (url.searchParams.get("welcome") !== "1") {
+      overlay.remove();
+      return;
+    }
+    const header = document.querySelector(".app-header");
+    const rawName =
+      (header && header.dataset && header.dataset.userName
+        ? header.dataset.userName
+        : "{{ user_email }}")
+        .trim() || "User";
+    const nameEl = document.getElementById("welcome-user-name");
+    if (nameEl) {
+      nameEl.textContent = `Welcome back, ${rawName}`;
+    }
+    overlay.hidden = false;
+    const closePopup = () => {
+      overlay.classList.add("fade-out");
+      window.setTimeout(() => {
+        overlay.remove();
+      }, 300);
+    };
+    const timer = window.setTimeout(closePopup, 2500);
+    const button = document.getElementById("welcome-ok");
+    if (button) {
+      button.addEventListener("click", () => {
+        window.clearTimeout(timer);
+        closePopup();
+      });
+    }
+    url.searchParams.delete("welcome");
+    window.history.replaceState({}, document.title, url.toString());
+  })();
+</script>
+{% endif %}

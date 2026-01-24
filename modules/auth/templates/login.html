@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Berita Acara App</title>
+    <link rel="icon" href="{{ url_for('static', path='img/faviconHWGBeritaAcara.png') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&amp;family=Sora:wght@600;700&amp;display=swap"
+      rel="stylesheet"
+    >
+    <link rel="stylesheet" href="{{ url_for('static', path='css/auth_modern.css') }}">
+  </head>
+  <body>
+    <main class="auth-container">
+      <section class="auth-hero">
+        <div class="hero-content">
+          <div class="brand-logo">
+            <img src="/static/img/hwgIcon.png" alt="HWG" class="logo-item logo-hwg">
+            <div class="logo-divider"></div>
+            <img src="/static/img/faviconHWGBeritaAcara.png" alt="App" class="logo-item logo-app">
+            <div class="brand-text">
+              <span class="brand-name">CC's Smart App</span>
+              <span class="brand-tag">Cost Control Dept.</span>
+            </div>
+          </div>
+          <div class="hero-text">
+            <span class="hero-kicker">Cost Control Management System</span>
+            <h1 class="hero-title">
+              Kontrol Pergerakan &amp;<br>
+              <span class="text-highlight">Penggunaan Barang</span>
+            </h1>
+            <p class="hero-desc">
+              Solusi satu pintu untuk administrasi Outlet. Terintegrasi langsung dengan Odoo, ESB, dan
+              Lembar Kerja Cost Control.
+            </p>
+          </div>
+        </div>
+        <div class="hero-footer">
+          <span class="integration-label">Terintegrasi dengan:</span>
+          <div class="integration-logos">
+            <img
+              src="{{ url_for('static', path='img/odooERPIcon.png') }}"
+              alt="Odoo"
+              class="logo-tech"
+              loading="lazy"
+            >
+            <img
+              src="{{ url_for('static', path='img/ESB-ERPIcon.png') }}"
+              alt="ESB"
+              class="logo-tech"
+              loading="lazy"
+            >
+            <img
+              src="{{ url_for('static', path='img/excellcon.png') }}"
+              alt="Excel"
+              class="logo-tech footer-logo-excel"
+              loading="lazy"
+            >
+          </div>
+        </div>
+        <div class="hero-pattern" aria-hidden="true"></div>
+      </section>
+
+      <section class="auth-form-wrapper">
+        <div class="form-card">
+          <div class="form-header">
+            <h1>Selamat Datang Kembali</h1>
+            <p class="subtitle">Silakan masuk untuk melanjutkan akses.</p>
+          </div>
+
+          {% if message %}
+          <div class="alert-box {% if status == 'success' %}alert-success{% else %}alert-error{% endif %}" role="alert">
+            <span class="alert-icon">
+              {% if status == 'success' %}&#10003;{% else %}!{% endif %}
+            </span>
+            <span class="alert-text">{{ message }}</span>
+          </div>
+          {% endif %}
+
+          <form action="/login" method="POST" class="modern-form">
+            {% if next_url %}
+            <input type="hidden" name="next" value="{{ next_url }}">
+            {% endif %}
+
+            <div class="form-group">
+              <label for="email">Email Address</label>
+              <div class="input-wrapper">
+                <input
+                  type="email"
+                  id="email"
+                  name="email"
+                  placeholder="nama@domain.com"
+                  required
+                  autocomplete="email"
+                >
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="password">Password</label>
+              <div class="input-wrapper">
+                <input
+                  type="password"
+                  id="password"
+                  name="password"
+                  placeholder="********"
+                  required
+                  autocomplete="current-password"
+                >
+                <button
+                  type="button"
+                  class="password-toggle"
+                  aria-label="Lihat password"
+                  data-target="password"
+                >
+                  <svg
+                    class="icon-eye"
+                    viewBox="0 0 24 24"
+                    width="20"
+                    height="20"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    fill="none"
+                  >
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                  <svg
+                    class="icon-eye-off hidden"
+                    viewBox="0 0 24 24"
+                    width="20"
+                    height="20"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    fill="none"
+                  >
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M1 1l22 22"></path>
+                  </svg>
+                </button>
+              </div>
+              <div class="forgot-password">
+                <a href="#">Lupa password?</a>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" class="btn-primary">Masuk ke Dashboard</button>
+            </div>
+          </form>
+
+          <div class="form-footer">
+            <p>Belum memiliki akun? <a href="/register?next={{ next_url | urlencode }}">Daftar Akun</a></p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="{{ url_for('static', path='js/auth_modern.js') }}"></script>
+  </body>
+</html>

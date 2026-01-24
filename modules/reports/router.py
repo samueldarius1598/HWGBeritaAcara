@@ -3,12 +3,11 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 
-from config import get_report_api_key
-from services import get_supabase_admin_client, get_supabase_client
+from core.config import get_report_api_key
+from core.database import get_supabase_admin_client, get_supabase_client
+from core.security import get_current_user
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
-
-AUTH_COOKIE_NAME = "sb_access_token"
 
 
 class MutasiReportQuery(BaseModel):
@@ -23,20 +22,6 @@ class MutasiReportQuery(BaseModel):
         return self
 
     model_config = {"populate_by_name": True}
-
-
-def _get_current_user(request: Request):
-    token = request.cookies.get(AUTH_COOKIE_NAME)
-    if not token:
-        return None
-    supabase = get_supabase_client()
-    if not supabase:
-        return None
-    try:
-        user_response = supabase.auth.get_user(token)
-        return user_response.user
-    except Exception:
-        return None
 
 
 def _get_api_key(request: Request):
@@ -64,7 +49,7 @@ def report_mutasi(request: Request, params: MutasiReportQuery = Depends()):
         if not supabase:
             raise HTTPException(status_code=503, detail="Supabase belum dikonfigurasi.")
     else:
-        user = _get_current_user(request)
+        user = get_current_user(request)
         if not user:
             raise HTTPException(status_code=401, detail="Unauthorized")
         supabase = get_supabase_client()
