@@ -102,7 +102,9 @@ def mutasi_list(
 
     message = request.query_params.get("message")
     status = request.query_params.get("status")
-    rows = []
+    receive_pending_rows = []
+    receive_rows = []
+    send_rows = []
 
     supabase = get_supabase_client()
     if not supabase:
@@ -114,53 +116,86 @@ def mutasi_list(
     else:
         repo = MutasiRepository(supabase)
         try:
-            def _build_header_query():
-                return repo.list_headers(start_date, end_date)
+            pending_statuses = {"SENT"}
 
-            resp = None
-            if outlet_id_value and not is_superadmin:
-                try:
-                    resp = (
-                        _build_header_query().or_(
-                            "outlet_pengirim_id.eq."
-                            f"{outlet_id_value},outlet_penerima_id.eq.{outlet_id_value}"
+            def _base_query(use_date_filter: bool):
+                if use_date_filter:
+                    return repo.list_headers(start_date, end_date)
+                return supabase.table("mutasi_header").select("*")
+
+            def _fetch_headers(field_id: str, field_name: str, use_date_filter: bool):
+                resp = None
+                if outlet_id_value and not is_superadmin:
+                    try:
+                        resp = (
+                            _base_query(use_date_filter)
+                            .eq(field_id, outlet_id_value)
+                            .order("tanggal", desc=True)
+                            .execute()
                         )
-                        .order("tanggal", desc=True)
-                        .execute()
+                    except Exception:
+                        resp = None
+                if resp is None or (
+                    resp is not None
+                    and not is_superadmin
+                    and outlet_name_value
+                    and not (resp.data or [])
+                ):
+                    query = _base_query(use_date_filter)
+                    if outlet_name_value and not is_superadmin:
+                        query = query.ilike(field_name, outlet_name_value)
+                    resp = query.order("tanggal", desc=True).execute()
+                return resp.data or []
+
+            def _format_rows(raw_rows, allow_statuses=None, exclude_ids=None):
+                rows = []
+                exclude_ids = exclude_ids or set()
+                for row in raw_rows or []:
+                    row_id = row.get("id")
+                    if row_id in exclude_ids:
+                        continue
+                    meta = status_meta(row.get("status"))
+                    if allow_statuses and meta["key"] not in allow_statuses:
+                        continue
+                    dibuat_oleh = row.get("dibuat_oleh") or "-"
+                    if isinstance(dibuat_oleh, list):
+                        dibuat_oleh = ", ".join(
+                            str(name) for name in dibuat_oleh if str(name).strip()
+                        )
+                    rows.append(
+                        {
+                            "id": row_id,
+                            "no_form": row.get("no_form") or "-",
+                            "tanggal": row.get("tanggal") or "-",
+                            "outlet_pengirim": row.get("outlet_pengirim") or "-",
+                            "outlet_penerima": row.get("outlet_penerima") or "-",
+                            "status_key": meta["key"],
+                            "status_label": meta["label"],
+                            "status_class": meta["class"],
+                            "dibuat_oleh": dibuat_oleh or "-",
+                        }
                     )
-                except Exception:
-                    resp = None
-            if resp is None or (
-                resp is not None
-                and not is_superadmin
-                and outlet_name_value
-                and not (resp.data or [])
-            ):
-                query = _build_header_query()
-                if outlet_name_value and not is_superadmin:
-                    query = query.or_(
-                        "outlet_pengirim.ilike."
-                        f"{outlet_name_value},outlet_penerima.ilike.{outlet_name_value}"
-                    )
-                resp = query.order("tanggal", desc=True).execute()
-            for row in resp.data or []:
-                dibuat_oleh = row.get("dibuat_oleh") or "-"
-                if isinstance(dibuat_oleh, list):
-                    dibuat_oleh = ", ".join(
-                        str(name) for name in dibuat_oleh if str(name).strip()
-                    )
-                meta = status_meta(row.get("status"))
-                rows.append(
-                    {
-                        "id": row.get("id"),
-                        "no_form": row.get("no_form") or "-",
-                        "tanggal": row.get("tanggal") or "-",
-                        "outlet_penerima": row.get("outlet_penerima") or "-",
-                        "status_label": meta["label"],
-                        "status_class": meta["class"],
-                        "dibuat_oleh": dibuat_oleh or "-",
-                    }
-                )
+                return rows
+
+            raw_receive_pending = _fetch_headers(
+                "outlet_penerima_id", "outlet_penerima", use_date_filter=False
+            )
+            receive_pending_rows = _format_rows(
+                raw_receive_pending, allow_statuses=pending_statuses
+            )
+            pending_ids = {
+                row["id"] for row in receive_pending_rows if row.get("id")
+            }
+
+            raw_receive_filtered = _fetch_headers(
+                "outlet_penerima_id", "outlet_penerima", use_date_filter=True
+            )
+            receive_rows = _format_rows(raw_receive_filtered, exclude_ids=pending_ids)
+
+            raw_send_filtered = _fetch_headers(
+                "outlet_pengirim_id", "outlet_pengirim", use_date_filter=True
+            )
+            send_rows = _format_rows(raw_send_filtered)
         except Exception as exc:
             message = message or f"Gagal memuat data mutasi: {exc}"
             status = status or "error"
@@ -171,7 +206,9 @@ def mutasi_list(
             "request": request,
             "profile": profile,
             "user_email": user.email,
-            "rows": rows,
+            "receive_pending_rows": receive_pending_rows,
+            "receive_rows": receive_rows,
+            "send_rows": send_rows,
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
             "message": message,

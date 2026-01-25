@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Form Berita Acara [Mutasi &amp; Biaya Lainnya]</title>
     <link rel="icon" href="{{ url_for('static', path='img/faviconHWGBeritaAcara.png') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}?v=20260124">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}?v=20260126">
   </head>
   <body>
     {% include "partials/app_header.html" %}
@@ -36,6 +36,7 @@
         method="post"
         enctype="multipart/form-data"
         data-max-upload="{{ max_upload_mb }}"
+        data-outlets='{{ outlets | tojson | e }}'
       >
         <section class="card">
           <div class="card-head">
@@ -227,6 +228,34 @@
       </form>
     </main>
 
+    <div
+      id="product-loading-overlay"
+      class="loading-overlay"
+      role="dialog"
+      aria-modal="true"
+      hidden
+    >
+      <div class="loading-card">
+        <div class="icon-circle loading-icon" aria-hidden="true">
+          <div class="loading-spinner"></div>
+        </div>
+        <div class="content-text">
+          <h3 class="loading-title">Memuat Daftar Produk</h3>
+          <p class="loading-text" id="product-loading-message" aria-live="polite">
+            Sedang Menarik Product Odoo dan ESB...
+          </p>
+        </div>
+        <div class="loading-actions">
+          <button type="button" class="btn-continue loading-close" id="product-loading-close">
+            Tutup
+          </button>
+        </div>
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill loading-progress"></div>
+        </div>
+      </div>
+    </div>
+
     <div class="modal hidden" id="pdf-modal" aria-hidden="true">
       <div class="modal-backdrop" data-close="true"></div>
       <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="pdf-modal-title">
@@ -288,10 +317,7 @@
       </div>
     </template>
 
-    <script>
-      window.OUTLETS = {{ outlets | tojson }};
-    </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
-    <script src="{{ url_for('static', path='js/script.js') }}"></script>
+    <script src="{{ url_for('static', path='js/script.js') }}?v=20260126-3"></script>
   </body>
 </html>

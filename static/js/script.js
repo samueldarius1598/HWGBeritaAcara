@@ -23,13 +23,29 @@
   const pdfCanvas = document.getElementById("pdf-canvas");
   const pdfStatus = document.getElementById("pdf-status");
   const pdfDownload = document.getElementById("pdf-download");
+  let productLoadingOverlay = document.getElementById("product-loading-overlay");
+  let productLoadingMessage = document.getElementById("product-loading-message");
+  let productLoadingBound = false;
   const maxUploadMb = parseInt(form.dataset.maxUpload || "200", 10);
 
-  const outlets = Array.isArray(window.OUTLETS) ? window.OUTLETS : [];
+  const outlets = (() => {
+    const raw = form.dataset.outlets;
+    if (!raw) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      return [];
+    }
+  })();
   const outletContexts = [];
   const productCache = new Map();
   let currentProducts = [];
   const isOutletLocked = outletNameInput?.dataset.locked === "true";
+  let productLoadingTimer = null;
+  let productLoadingFadeTimer = null;
 
   const splitNames = (value) =>
     value
@@ -342,6 +358,166 @@
     }
     alertBox.textContent = "";
     alertBox.classList.add("hidden");
+  };
+
+  const clearProductLoadingTimers = () => {
+    if (productLoadingTimer) {
+      window.clearTimeout(productLoadingTimer);
+      productLoadingTimer = null;
+    }
+    if (productLoadingFadeTimer) {
+      window.clearTimeout(productLoadingFadeTimer);
+      productLoadingFadeTimer = null;
+    }
+  };
+
+  const ensureProductLoadingOverlay = () => {
+    if (productLoadingOverlay && productLoadingMessage) {
+      if (!productLoadingBound) {
+        const closeButton = productLoadingOverlay.querySelector(
+          "#product-loading-close"
+        );
+        if (closeButton) {
+          closeButton.addEventListener("click", () => {
+            closeProductLoadingOverlay();
+          });
+        }
+        productLoadingBound = true;
+      }
+      return true;
+    }
+    const existing = document.getElementById("product-loading-overlay");
+    if (existing) {
+      productLoadingOverlay = existing;
+      productLoadingMessage = existing.querySelector("#product-loading-message");
+      const closeButton = existing.querySelector("#product-loading-close");
+      if (closeButton && !productLoadingBound) {
+        closeButton.addEventListener("click", () => {
+          closeProductLoadingOverlay();
+        });
+        productLoadingBound = true;
+      }
+      return Boolean(productLoadingOverlay && productLoadingMessage);
+    }
+    if (!document.body) {
+      return false;
+    }
+    const overlay = document.createElement("div");
+    overlay.id = "product-loading-overlay";
+    overlay.className = "loading-overlay";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.hidden = true;
+    overlay.innerHTML = `
+      <div class="loading-card">
+        <div class="icon-circle loading-icon" aria-hidden="true">
+          <div class="loading-spinner"></div>
+        </div>
+        <div class="content-text">
+          <h3 class="loading-title">Memuat Daftar Produk</h3>
+          <p class="loading-text" id="product-loading-message" aria-live="polite">
+            Sedang Menarik Product Odoo dan ESB...
+          </p>
+        </div>
+        <div class="loading-actions">
+          <button type="button" class="btn-continue loading-close" id="product-loading-close">
+            Tutup
+          </button>
+        </div>
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill loading-progress"></div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    productLoadingOverlay = overlay;
+    productLoadingMessage = overlay.querySelector("#product-loading-message");
+    const closeButton = overlay.querySelector("#product-loading-close");
+    if (closeButton) {
+      closeButton.addEventListener("click", () => {
+        closeProductLoadingOverlay();
+      });
+      productLoadingBound = true;
+    }
+    return Boolean(productLoadingOverlay && productLoadingMessage);
+  };
+
+  const setProductLoadingMessage = (message) => {
+    if (!ensureProductLoadingOverlay()) {
+      return;
+    }
+    if (!productLoadingMessage) {
+      return;
+    }
+    productLoadingMessage.textContent = message;
+  };
+
+  const showProductLoadingOverlay = (message) => {
+    if (!ensureProductLoadingOverlay()) {
+      return;
+    }
+    if (!productLoadingOverlay) {
+      return;
+    }
+    clearProductLoadingTimers();
+    productLoadingOverlay.classList.remove("fade-out", "ready");
+    if (message) {
+      setProductLoadingMessage(message);
+    }
+    if (productLoadingOverlay.hasAttribute("hidden")) {
+      productLoadingOverlay.hidden = false;
+    }
+    productLoadingOverlay.hidden = false;
+    document.body.classList.add("overlay-open");
+    if (form) {
+      form.classList.add("is-busy");
+      form.setAttribute("aria-busy", "true");
+      if ("inert" in form) {
+        form.inert = true;
+      }
+    }
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  };
+
+  const closeProductLoadingOverlay = () => {
+    if (!ensureProductLoadingOverlay()) {
+      return;
+    }
+    if (!productLoadingOverlay) {
+      return;
+    }
+    clearProductLoadingTimers();
+    productLoadingOverlay.classList.add("fade-out");
+    productLoadingFadeTimer = window.setTimeout(() => {
+      productLoadingOverlay.hidden = true;
+      productLoadingOverlay.classList.remove("fade-out", "ready");
+      document.body.classList.remove("overlay-open");
+      if (form) {
+        form.classList.remove("is-busy");
+        form.removeAttribute("aria-busy");
+        if ("inert" in form) {
+          form.inert = false;
+        }
+      }
+    }, 300);
+  };
+
+  const completeProductLoadingOverlay = (message) => {
+    if (!ensureProductLoadingOverlay()) {
+      return;
+    }
+    if (!productLoadingOverlay) {
+      return;
+    }
+    if (message) {
+      setProductLoadingMessage(message);
+    }
+    productLoadingOverlay.classList.add("ready");
+    productLoadingTimer = window.setTimeout(() => {
+      closeProductLoadingOverlay();
+    }, 2000);
   };
 
   const setActiveSuggestion = (items, activeIndex) => {
@@ -711,8 +887,10 @@
       if (itemsLoading) {
         itemsLoading.textContent = "Pilih outlet pengirim untuk memuat produk.";
       }
+      closeProductLoadingOverlay();
       return;
     }
+    showProductLoadingOverlay("Sedang Menarik Product Odoo dan ESB...");
     if (productCache.has(outletId)) {
       currentProducts = productCache.get(outletId);
       if (itemsLoading) {
@@ -720,6 +898,9 @@
       }
       const rows = itemsBody.querySelectorAll(".item-row");
       rows.forEach(clearRow);
+      completeProductLoadingOverlay(
+        `Produk berhasil dimuat (${currentProducts.length} item).`
+      );
       return;
     }
     if (itemsLoading) {
@@ -740,11 +921,16 @@
       }
       const rows = itemsBody.querySelectorAll(".item-row");
       rows.forEach(clearRow);
+      completeProductLoadingOverlay(
+        `Produk berhasil dimuat (${currentProducts.length} item).`
+      );
     } catch (error) {
       currentProducts = [];
       if (itemsLoading) {
         itemsLoading.textContent = "Gagal memuat produk.";
       }
+      setProductLoadingMessage("Gagal memuat daftar produk.");
+      closeProductLoadingOverlay();
     }
   };
 

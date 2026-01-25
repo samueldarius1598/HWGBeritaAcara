@@ -53,8 +53,102 @@
 
       <section class="card table-card">
         <div class="card-head">
-          <h2>Mutasi Terbaru</h2>
-          <span class="badge muted">{{ rows|length }} Data</span>
+          <h2>Daftar Mutasi Diterima</h2>
+          <span class="badge muted">
+            {{ (receive_pending_rows|length) + (receive_rows|length) }} Data
+          </span>
+        </div>
+        <div class="table-section">
+          <p class="table-section-title">Perlu Diterima (tidak terikat filter tanggal)</p>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>No Form</th>
+                  <th>Tanggal</th>
+                  <th>Outlet Pengirim</th>
+                  <th>Status</th>
+                  <th>Dibuat Oleh</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% if receive_pending_rows %}
+                  {% for row in receive_pending_rows %}
+                  <tr>
+                    <td>
+                      {% if row.id %}
+                      <a class="table-link" href="/mutasi/{{ row.id }}">{{ row.no_form }}</a>
+                      {% else %}
+                      {{ row.no_form }}
+                      {% endif %}
+                    </td>
+                    <td>{{ row.tanggal }}</td>
+                    <td>{{ row.outlet_pengirim }}</td>
+                    <td>
+                      <span class="status-pill {{ row.status_class }}">{{ row.status_label }}</span>
+                    </td>
+                    <td>{{ row.dibuat_oleh }}</td>
+                  </tr>
+                  {% endfor %}
+                {% else %}
+                  <tr>
+                    <td colspan="5" class="table-empty">Belum ada mutasi yang perlu diterima.</td>
+                  </tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="table-section">
+          <p class="table-section-title">Riwayat (sesuai filter tanggal)</p>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>No Form</th>
+                  <th>Tanggal</th>
+                  <th>Outlet Pengirim</th>
+                  <th>Status</th>
+                  <th>Dibuat Oleh</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% if receive_rows %}
+                  {% for row in receive_rows %}
+                  <tr>
+                    <td>
+                      {% if row.id %}
+                      <a class="table-link" href="/mutasi/{{ row.id }}">{{ row.no_form }}</a>
+                      {% else %}
+                      {{ row.no_form }}
+                      {% endif %}
+                    </td>
+                    <td>{{ row.tanggal }}</td>
+                    <td>{{ row.outlet_pengirim }}</td>
+                    <td>
+                      <span class="status-pill {{ row.status_class }}">{{ row.status_label }}</span>
+                    </td>
+                    <td>{{ row.dibuat_oleh }}</td>
+                  </tr>
+                  {% endfor %}
+                {% else %}
+                  <tr>
+                    <td colspan="5" class="table-empty">
+                      Belum ada data mutasi pada rentang tanggal ini.
+                    </td>
+                  </tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="card table-card">
+        <div class="card-head">
+          <h2>Daftar Mutasi Terkirim</h2>
+          <span class="badge muted">{{ send_rows|length }} Data</span>
         </div>
         <div class="table-wrap">
           <table class="data-table">
@@ -68,8 +162,8 @@
               </tr>
             </thead>
             <tbody>
-              {% if rows %}
-                {% for row in rows %}
+              {% if send_rows %}
+                {% for row in send_rows %}
                 <tr>
                   <td>
                     {% if row.id %}

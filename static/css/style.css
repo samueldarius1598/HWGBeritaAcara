@@ -496,6 +496,18 @@ body {
   margin-top: 18px;
 }
 
+.table-section + .table-section {
+  margin-top: 18px;
+}
+
+.table-section-title {
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 .table-wrap {
   overflow-x: auto;
 }
@@ -859,6 +871,10 @@ h1 {
   display: grid;
   gap: 24px;
   margin-top: 28px;
+}
+
+.form.is-busy {
+  pointer-events: none;
 }
 
 .card {
@@ -1594,7 +1610,8 @@ input[readonly] {
   text-decoration: none;
 }
 
-.welcome-overlay {
+.welcome-overlay,
+.loading-overlay {
   position: fixed;
   inset: 0;
   width: 100vw;
@@ -1608,7 +1625,13 @@ input[readonly] {
   animation: fade-in 0.3s ease-out forwards;
 }
 
-.welcome-card {
+.welcome-overlay[hidden],
+.loading-overlay[hidden] {
+  display: none !important;
+}
+
+.welcome-card,
+.loading-card {
   background: rgba(255, 255, 255, 0.95);
   width: 100%;
   max-width: 340px;
@@ -1650,6 +1673,33 @@ input[readonly] {
   line-height: 1.4;
 }
 
+.loading-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.loading-text {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.loading-icon {
+  background-color: rgba(135, 90, 123, 0.12);
+}
+
+.loading-spinner {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 3px solid rgba(135, 90, 123, 0.3);
+  border-top-color: var(--accent);
+  animation: spin 1s linear infinite;
+}
+
 .btn-continue {
   background-color: var(--accent);
   color: #ffffff;
@@ -1665,6 +1715,21 @@ input[readonly] {
 
 .btn-continue:hover {
   background-color: var(--accent-strong);
+}
+
+.loading-actions {
+  margin-top: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.loading-close {
+  background: #f2edf7;
+  color: var(--ink);
+}
+
+.loading-close:hover {
+  background: #ebe4f2;
 }
 
 .progress-bar-container {
@@ -1684,7 +1749,29 @@ input[readonly] {
   transform-origin: left;
 }
 
+.loading-overlay .progress-bar-container {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.loading-overlay .loading-progress {
+  animation: none;
+}
+
+.loading-overlay.ready .progress-bar-container {
+  opacity: 1;
+}
+
+.loading-overlay.ready .loading-progress {
+  animation: progress-burn 2s linear forwards;
+}
+
 .welcome-overlay.fade-out {
+  animation: fade-out 0.3s ease-in forwards;
+}
+
+
+.loading-overlay.fade-out {
   animation: fade-out 0.3s ease-in forwards;
 }
 
@@ -1717,6 +1804,12 @@ input[readonly] {
   }
 }
 
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @keyframes fade-out {
   to {
     opacity: 0;
@@ -1725,6 +1818,10 @@ input[readonly] {
 }
 
 body.modal-open {
+  overflow: hidden;
+}
+
+body.overlay-open {
   overflow: hidden;
 }
 
@@ -1931,7 +2028,8 @@ body.modal-open {
     grid-template-columns: 1fr;
   }
 
-  .welcome-card {
+  .welcome-card,
+  .loading-card {
     max-width: min(90%, 320px);
   }
 
