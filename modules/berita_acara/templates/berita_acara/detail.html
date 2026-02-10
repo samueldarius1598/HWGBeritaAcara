@@ -1,0 +1,75 @@
+{% extends "berita_acara/base.html" %}
+
+{% block title %}Detail Berita Acara{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div class="page-title">
+      <p class="page-kicker">Berita Acara</p>
+      <h1>Detail Berita Acara</h1>
+      <p class="page-sub">Ringkasan header dan detail item.</p>
+    </div>
+    <div class="page-actions">
+      <a class="btn ghost btn-sm" href="/berita-acara">Kembali ke Daftar</a>
+      <a class="btn primary" href="/berita-acara/form">Buat Baru</a>
+    </div>
+  </div>
+
+  <section class="card detail-card">
+    <div class="detail-summary">
+      <div class="detail-block">
+        <span class="detail-label">No Form</span>
+        <span class="detail-value">{{ header.no_form or '-' }}</span>
+      </div>
+      <div class="detail-block">
+        <span class="detail-label">Purpose</span>
+        <span class="detail-value">{{ header.purpose_name or '-' }}</span>
+      </div>
+      <div class="detail-block">
+        <span class="detail-label">Outlet</span>
+        <span class="detail-value">{{ header.outlet_name or '-' }}</span>
+      </div>
+      <div class="detail-block">
+        <span class="detail-label">Status</span>
+        <span class="status-badge status-sent">{{ header.status or '-' }}</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="card table-card">
+    <div class="card-head">
+      <h2>Item Berita Acara</h2>
+      <span class="badge muted">{{ lines|length }} Item</span>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>No</th>
+            <th>Nama Item</th>
+            <th>Kode</th>
+            <th>UOM</th>
+            <th>Qty</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if lines %}
+            {% for line in lines %}
+            <tr>
+              <td>{{ line.row_no }}</td>
+              <td>{{ line.nama_item }}</td>
+              <td>{{ line.kode_item }}</td>
+              <td>{{ line.uom }}</td>
+              <td class="numeric">{{ line.qty }}</td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="5" class="table-empty">Tidak ada item.</td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

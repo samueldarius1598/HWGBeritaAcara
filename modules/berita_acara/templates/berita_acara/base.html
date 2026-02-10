@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Berita Acara{% endblock %}</title>
+    <link rel="icon" href="{{ url_for('static', path='img/faviconHWGBeritaAcara.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}?v=20260128-1">
+    {% block head_extra %}{% endblock %}
+  </head>
+  <body>
+    {% include "partials/app_header.html" %}
+    <main class="page">
+      {% block content %}{% endblock %}
+    </main>
+    {% block body_extra %}{% endblock %}
+  </body>
+</html>

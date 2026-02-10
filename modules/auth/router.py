@@ -235,9 +235,9 @@ def register_submit(
 
 
 @router.post("/logout")
-def logout():
+def logout(request: Request):
     response = RedirectResponse(url="/login", status_code=303)
-    clear_auth_cookie(response)
+    clear_auth_cookie(response, request)
     return response
 
 

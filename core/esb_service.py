@@ -1,4 +1,5 @@
 ﻿import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -88,6 +89,7 @@ class EsbService:
         refresh_ttl_sec: int = 86400,
         product_detail_ttl_sec: int = 3600,
         product_list_ttl_sec: int = 600,
+        sheet_cache_ttl_sec: int = 60,
         flag_active: int = 1,
     ):
         self.base_url = (
@@ -110,6 +112,7 @@ class EsbService:
         self.refresh_ttl_sec = refresh_ttl_sec
         self.product_detail_ttl_sec = product_detail_ttl_sec
         self.product_list_ttl_sec = product_list_ttl_sec
+        self.sheet_cache_ttl_sec = sheet_cache_ttl_sec
         self.flag_active = flag_active
 
         self.session = requests.Session()
@@ -124,6 +127,7 @@ class EsbService:
         self._config_loaded = False
         self._product_detail_cache: Dict[int, Dict[str, Any]] = {}
         self._product_list_cache: Dict[str, Any] = {"expires": 0.0, "data": []}
+        self._sheet_cache: Dict[str, Any] = {"expires": 0.0, "data": {}, "store": None}
 
     def _get_sheet_store(self) -> Optional[GoogleSheetCredentialsStore]:
         if self.sheet_store is not None:
@@ -140,6 +144,10 @@ class EsbService:
     def _load_sheet_credentials(
         self,
     ) -> Tuple[Dict[str, str], Optional[GoogleSheetCredentialsStore]]:
+        if self.sheet_cache_ttl_sec and time.time() < self._sheet_cache.get("expires", 0):
+            cached = self._sheet_cache.get("data") or {}
+            cached_store = self._sheet_cache.get("store")
+            return cached, cached_store
         store = self._get_sheet_store()
         if not store:
             return {}, None
@@ -159,6 +167,12 @@ class EsbService:
                 "token_timestamp": flat_vals[9],
             }
             creds = build_esb_credentials(raw_values)
+            if self.sheet_cache_ttl_sec:
+                self._sheet_cache = {
+                    "expires": time.time() + max(self.sheet_cache_ttl_sec, 0),
+                    "data": creds,
+                    "store": store,
+                }
             return creds, store
         except Exception as exc:
             print(f"[ESB Warning] Gagal ambil credentials dari Google Sheet: {exc}")
@@ -210,6 +224,24 @@ class EsbService:
             "company_name": result.get("companyName") or "",
             "username": result.get("username") or "",
         }
+
+    @staticmethod
+    def _extract_product_detail(payload: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(payload, dict):
+            return {"uom_name": "", "price": 0.0}
+        result = payload.get("result", {}) if isinstance(payload.get("result"), dict) else {}
+        details = result.get("productDetails", []) or []
+        selected_detail = {}
+        if details:
+            selected_detail = next(
+                (item for item in details if item.get("flagDefault")),
+                details[0],
+            )
+        return {
+            "uom_name": selected_detail.get("uomName", ""),
+            "price": float(selected_detail.get("basePrice", 0) or 0),
+        }
+
 
     def _persist_session(
         self, target: Optional[object], session: Dict[str, str], timestamp_str: str
@@ -448,20 +480,7 @@ class EsbService:
                         continue
                     resp.raise_for_status()
                     data = resp.json() or {}
-                    result = data.get("result", {}) or {}
-
-                    details = result.get("productDetails", []) or []
-                    selected_detail = {}
-                    if details:
-                        selected_detail = next(
-                            (item for item in details if item.get("flagDefault")),
-                            details[0],
-                        )
-
-                    result_payload = {
-                        "uom_name": selected_detail.get("uomName", ""),
-                        "price": float(selected_detail.get("basePrice", 0) or 0),
-                    }
+                    result_payload = self._extract_product_detail(data)
                     if self.product_detail_ttl_sec > 0:
                         self._product_detail_cache[product_id] = {
                             "expires": time.time() + self.product_detail_ttl_sec,
@@ -514,11 +533,119 @@ class EsbService:
                 if not data_list:
                     break
 
+                detail_map: Dict[int, Dict[str, Any]] = {}
+                fresh_details: Dict[int, Dict[str, Any]] = {}
+                to_fetch: List[int] = []
+                now = time.time()
+
                 for item in data_list:
                     product_id = item.get("productID")
                     if not product_id:
                         continue
-                    detail_info = self.get_product_detail(product_id)
+                    cached = self._product_detail_cache.get(product_id)
+                    if cached and now < cached.get("expires", 0):
+                        detail_map[product_id] = cached.get(
+                            "data", {"uom_name": "", "price": 0.0}
+                        )
+                    else:
+                        to_fetch.append(product_id)
+
+                if to_fetch:
+                    headers = dict(self.headers)
+                    base_url = self.base_url
+                    timeout = self.detail_timeout
+                    max_workers = _coerce_int(
+                        get_setting("ESB_DETAIL_MAX_WORKERS"), 16
+                    )
+                    if max_workers <= 0:
+                        max_workers = 1
+                    batch_size = _coerce_int(
+                        get_setting("ESB_DETAIL_BATCH_SIZE"), 200
+                    )
+                    if batch_size <= 0:
+                        batch_size = 1
+                    batch_delay = get_setting("ESB_DETAIL_BATCH_DELAY_SEC")
+                    try:
+                        batch_delay = float(batch_delay or 0)
+                    except (TypeError, ValueError):
+                        batch_delay = 0.0
+                    unique_ids = list({pid for pid in to_fetch if pid})
+                    unauthorized_ids: List[int] = []
+
+                    def _fetch_detail(pid: int):
+                        url = f"{base_url}/product/{pid}"
+                        try:
+                            with requests.Session() as session:
+                                session.headers.update(headers)
+                                for attempt in range(2):
+                                    try:
+                                        resp = session.get(url, timeout=timeout)
+                                        if resp.status_code in (401, 403):
+                                            return pid, None, "unauthorized"
+                                        resp.raise_for_status()
+                                        data = resp.json() or {}
+                                        return pid, self._extract_product_detail(data), None
+                                    except requests.exceptions.RequestException as exc:
+                                        if attempt == 1:
+                                            return pid, None, str(exc)
+                                        time.sleep(1)
+                        except Exception as exc:
+                            return pid, None, str(exc)
+                        return pid, None, "unknown error"
+
+                    for idx in range(0, len(unique_ids), batch_size):
+                        chunk = unique_ids[idx : idx + batch_size]
+                        worker_count = min(max_workers, len(chunk) or 1)
+                        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                            futures = {
+                                executor.submit(_fetch_detail, pid): pid for pid in chunk
+                            }
+                            for fut in as_completed(futures):
+                                pid = futures[fut]
+                                try:
+                                    pid, detail, err = fut.result()
+                                except Exception as exc:
+                                    print(
+                                        f"[ESB Warning] Gagal ambil detail ID {pid}: {exc}"
+                                    )
+                                    detail_map[pid] = {"uom_name": "", "price": 0.0}
+                                    continue
+                                if detail:
+                                    detail_map[pid] = detail
+                                    fresh_details[pid] = detail
+                                elif err == "unauthorized":
+                                    unauthorized_ids.append(pid)
+                                else:
+                                    print(
+                                        f"[ESB Warning] Gagal ambil detail ID {pid}: {err}"
+                                    )
+                                    detail_map[pid] = {"uom_name": "", "price": 0.0}
+                        if batch_delay > 0 and idx + batch_size < len(unique_ids):
+                            time.sleep(batch_delay)
+
+                    if unauthorized_ids:
+                        try:
+                            self._ensure_access_token(force_login=True)
+                        except Exception as exc:
+                            print(f"[ESB Warning] Re-login gagal: {exc}")
+                        for pid in unauthorized_ids:
+                            detail_map[pid] = self.get_product_detail(pid)
+
+                    if fresh_details and self.product_detail_ttl_sec > 0:
+                        expires = time.time() + self.product_detail_ttl_sec
+                        for pid, detail in fresh_details.items():
+                            self._product_detail_cache[pid] = {
+                                "expires": expires,
+                                "data": detail,
+                            }
+
+                for item in data_list:
+                    product_id = item.get("productID")
+                    if not product_id:
+                        continue
+                    detail_info = detail_map.get(
+                        product_id, {"uom_name": "", "price": 0.0}
+                    )
                     all_products.append(
                         {
                             "id": product_id,
@@ -529,7 +656,6 @@ class EsbService:
                             "source": "ESB",
                         }
                     )
-
                 if len(data_list) < limit:
                     break
                 page += 1
@@ -543,3 +669,4 @@ class EsbService:
                 "data": all_products,
             }
         return all_products
+

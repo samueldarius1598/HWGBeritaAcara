@@ -1,0 +1,235 @@
+{% extends "berita_acara/base.html" %}
+
+{% block title %}Form Berita Acara{% endblock %}
+
+{% block head_extra %}
+  <script src="https://jsuites.net/v4/jsuites.js"></script>
+  <link rel="stylesheet" href="https://jsuites.net/v4/jsuites.css" type="text/css">
+  <script src="https://bossanova.uk/jspreadsheet/v4/jexcel.js"></script>
+  <link rel="stylesheet" href="https://bossanova.uk/jspreadsheet/v4/jexcel.css" type="text/css">
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div class="page-title">
+      <p class="page-kicker">Berita Acara</p>
+      <h1>Form Berita Acara</h1>
+      <p class="page-sub">Dikelola dan diperiksa sepenuhnya oleh Cost Control Dept.</p>
+    </div>
+    <div class="page-actions">
+      <a class="btn ghost btn-sm" href="/berita-acara">Kembali ke Daftar</a>
+    </div>
+  </div>
+
+  {% if message %}
+  <div class="alert {% if status == 'success' %}success{% else %}error{% endif %}">
+    {{ message }}
+  </div>
+  {% endif %}
+
+  <form
+    id="berita-acara-form"
+    class="form"
+    action="/berita-acara/submit"
+    method="post"
+    data-products-url="/api/berita-acara/products"
+    data-purposes-url="/api/berita-acara/purposes"
+  >
+    <section class="card">
+      <div class="card-head">
+        <h2>Informasi Umum</h2>
+        <span class="badge">Wajib diisi</span>
+      </div>
+      <div class="grid grid-3">
+        <div class="field">
+          <label for="no_form">No Form</label>
+          <input
+            type="text"
+            id="no_form"
+            name="no_form"
+            value="{{ no_form }}"
+            readonly
+          >
+        </div>
+        <div class="field">
+          <label for="purpose_id">Purpose</label>
+          <select id="purpose_id" name="purpose_id" required>
+            <option value="">Memuat...</option>
+          </select>
+          <input type="hidden" id="purpose_name" name="purpose_name">
+        </div>
+        <div class="field">
+          <label for="outlet_name">Nama Outlet</label>
+          <input
+            type="text"
+            id="outlet_name"
+            value="{{ profile.outlet_name if profile else '' }}"
+            readonly
+          >
+          <input type="hidden" id="outlet_id" name="outlet_id" value="{{ profile.outlet_id if profile else '' }}">
+          <input type="hidden" id="outlet_name_hidden" name="outlet_name" value="{{ profile.outlet_name if profile else '' }}">
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Detail Item</h2>
+        <span class="badge muted">Lembar Isi Detail Barang</span>
+      </div>
+      <div class="items-toolbar">
+        <p class="items-hint" id="items-loading">Memuat daftar produk...</p>
+      </div>
+      <div id="spreadsheet"></div>
+      <div class="items-toolbar add-row-toolbar">
+        <div class="add-row-stack">
+          <span class="add-row-label">Tambah</span>
+          <input
+            type="number"
+            id="add-row-count"
+            class="text-input add-row-input"
+            value="20"
+            min="1"
+          >
+          <span class="add-row-suffix">baris</span>
+        </div>
+        <button type="button" class="btn ghost btn-sm" id="add-row-button">
+          Tambah
+        </button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Personel</h2>
+        <span class="badge">Wajib diisi</span>
+      </div>
+      <div class="grid grid-3">
+        <div class="field">
+          <label for="dibuat_oleh_input">Dibuat Oleh</label>
+          <div class="tag-input">
+            <input
+              type="text"
+              id="dibuat_oleh_input"
+              class="tag-entry"
+              placeholder="Ketik nama lalu Enter"
+              autocomplete="off"
+            >
+            <input type="hidden" id="dibuat_oleh" name="dibuat_oleh">
+          </div>
+        </div>
+        <div class="field">
+          <label for="disetujui_oleh_input">Disetujui Oleh</label>
+          <div class="tag-input">
+            <input
+              type="text"
+              id="disetujui_oleh_input"
+              class="tag-entry"
+              placeholder="Ketik nama lalu Enter"
+              autocomplete="off"
+            >
+            <input type="hidden" id="disetujui_oleh" name="disetujui_oleh">
+          </div>
+        </div>
+        <div class="field">
+          <label for="mengetahui_oleh_input">Mengetahui Oleh</label>
+          <div class="tag-input">
+            <input
+              type="text"
+              id="mengetahui_oleh_input"
+              class="tag-entry"
+              placeholder="Ketik nama lalu Enter"
+              autocomplete="off"
+            >
+            <input type="hidden" id="mengetahui_oleh" name="mengetahui_oleh">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="actions">
+      <div class="actions-main">
+        <button type="submit" class="btn primary btn-submit">
+          <img class="btn-icon" src="{{ url_for('static', path='img/iconSubmit.png') }}" alt="" aria-hidden="true">
+          Submit
+        </button>
+        <button type="button" class="btn secondary btn-print" id="print-button">
+          <img class="btn-icon" src="{{ url_for('static', path='img/iconPrint.png') }}" alt="" aria-hidden="true">
+          Print
+        </button>
+      </div>
+      <div class="actions-meta">
+        <div id="form-alert" class="alert inline hidden"></div>
+        <p class="actions-note">Pastikan data sudah benar sebelum submit.</p>
+      </div>
+    </section>
+
+    <input type="hidden" name="items_json" id="items-json">
+  </form>
+
+  <div class="modal hidden" id="pdf-modal" aria-hidden="true">
+    <div class="modal-backdrop" data-close="true"></div>
+    <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="pdf-modal-title">
+      <div class="modal-header">
+        <h3 id="pdf-modal-title">Pratinjau Berita Acara</h3>
+        <button type="button" class="btn ghost modal-close" data-close="true">Tutup</button>
+      </div>
+      <div class="modal-body">
+        <div class="pdf-status" id="pdf-status">Memuat pratinjau PDF...</div>
+        <div class="preview-canvas-wrap">
+          <canvas id="pdf-canvas"></canvas>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <a class="btn secondary" id="pdf-download" href="#" download>Unduh PDF</a>
+      </div>
+    </div>
+  </div>
+
+  <div
+    id="product-loading-overlay"
+    class="loading-overlay"
+    role="dialog"
+    aria-modal="true"
+    hidden
+  >
+    <div class="loading-card">
+      <div class="icon-circle loading-icon" aria-hidden="true">
+        <div class="loading-spinner"></div>
+      </div>
+      <div class="content-text">
+        <h3 class="loading-title">Memuat Daftar Produk</h3>
+        <p class="loading-text" id="product-loading-message" aria-live="polite">
+          Sedang Menarik Product Odoo dan ESB...
+        </p>
+      </div>
+      <div class="loading-actions">
+        <button type="button" class="btn-continue loading-close" id="product-loading-close">
+          Tutup
+        </button>
+      </div>
+      <div class="progress-bar-container">
+        <div class="progress-bar-fill loading-progress"></div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block body_extra %}
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <script src="{{ url_for('static', path='js/berita_acara.js') }}?v=20260201-4"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      if (window.initBeritaAcaraForm) {
+        window.initBeritaAcaraForm({
+          formId: "berita-acara-form",
+          spreadsheetId: "spreadsheet",
+          productsUrl: "/api/berita-acara/products",
+          purposesUrl: "/api/berita-acara/purposes",
+          submitUrl: "/berita-acara/submit",
+          previewUrl: "/berita-acara/preview"
+        });
+      }
+    });
+  </script>
+{% endblock %}

@@ -1,7 +1,13 @@
+import base64
+import hashlib
+import json
+import threading
+import time
 from urllib.parse import quote
 
 from fastapi import Request
 from fastapi.responses import RedirectResponse
+from cachetools import TTLCache
 
 from .config import get_setting
 from .database import get_supabase_admin_client, get_supabase_client
@@ -14,6 +20,39 @@ SUPERADMIN_EMAIL = (get_setting("SUPERADMIN_EMAIL") or "").strip().lower()
 SUPERADMIN_PASSWORD = get_setting("SUPERADMIN_PASSWORD") or ""
 SUPERADMIN_FULL_NAME = get_setting("SUPERADMIN_FULL_NAME") or "Superadmin"
 SUPERADMIN_OUTLET = get_setting("SUPERADMIN_OUTLET") or "Cost Control"
+
+_USER_CACHE = TTLCache(maxsize=10_000, ttl=60)  # token -> (user, expires_at)
+_PROFILE_CACHE = TTLCache(maxsize=10_000, ttl=60)  # user_id -> profile
+_CACHE_LOCK = threading.Lock()
+_REQUEST_UNSET = object()
+
+
+def _b64url_decode(data: str) -> bytes:
+    padding = "=" * (-len(data) % 4)
+    return base64.urlsafe_b64decode(data + padding)
+
+
+def _jwt_remaining_ttl(token: str, max_ttl: int = 60) -> int:
+    # TTL = min(max_ttl, sisa waktu sebelum exp). fallback ke max_ttl kalau parsing gagal.
+    try:
+        parts = token.split(".")
+        if len(parts) < 2:
+            return max_ttl
+        payload = json.loads(_b64url_decode(parts[1]).decode("utf-8"))
+        exp = int(payload.get("exp") or 0)
+        if exp <= 0:
+            return max_ttl
+        remaining = exp - int(time.time())
+        if remaining <= 0:
+            return 1
+        return max(1, min(max_ttl, remaining))
+    except Exception:
+        return max_ttl
+
+
+def _token_key(token: str) -> str:
+    # jangan simpan token mentah sebagai key cache
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def set_auth_cookie(response, session):
@@ -31,22 +70,58 @@ def set_auth_cookie(response, session):
     )
 
 
-def clear_auth_cookie(response):
+def clear_auth_cookie(response, request: Request | None = None):
+    if request:
+        token = request.cookies.get(AUTH_COOKIE_NAME)
+        if token:
+            key = _token_key(token)
+            with _CACHE_LOCK:
+                _USER_CACHE.pop(key, None)
     response.delete_cookie(AUTH_COOKIE_NAME, path="/")
 
 
 def get_current_user(request: Request, supabase=None):
+    # per-request cache
+    cached = getattr(request.state, "current_user", _REQUEST_UNSET)
+    if cached is not _REQUEST_UNSET:
+        return cached
+
     token = request.cookies.get(AUTH_COOKIE_NAME)
     if not token:
+        request.state.current_user = None
         return None
+
+    key = _token_key(token)
+    now = time.time()
+    with _CACHE_LOCK:
+        cached_entry = _USER_CACHE.get(key)
+    if cached_entry is not None:
+        cached_user, expires_at = cached_entry
+        if expires_at > now:
+            request.state.current_user = cached_user
+            return cached_user
+        with _CACHE_LOCK:
+            _USER_CACHE.pop(key, None)
+
     if supabase is None:
         supabase = get_supabase_client()
     if not supabase:
+        request.state.current_user = None
         return None
     try:
         user_response = supabase.auth.get_user(token)
-        return user_response.user
+        user = user_response.user
+
+        # cache TTL “dinamis” berdasar exp (maks 60 detik)
+        ttl = _jwt_remaining_ttl(token, max_ttl=60)
+        expires_at = time.time() + max(ttl, 1)
+        with _CACHE_LOCK:
+            _USER_CACHE[key] = (user, expires_at)
+
+        request.state.current_user = user
+        return user
     except Exception:
+        request.state.current_user = None
         return None
 
 
@@ -103,12 +178,24 @@ def ensure_superadmin_account():
 def get_profile(user_id):
     if not user_id:
         return None
+    with _CACHE_LOCK:
+        cached = _PROFILE_CACHE.get(user_id)
+    if cached is not None:
+        return cached
     supabase = get_supabase_client()
     if not supabase:
         return None
     try:
-        resp = supabase.table("profiles").select("*").eq("id", user_id).execute()
-        return resp.data[0] if resp.data else None
+        resp = (
+            supabase.table("profiles")
+            .select("id,full_name,outlet_name,outlet_id")
+            .eq("id", user_id)
+            .execute()
+        )
+        profile = resp.data[0] if resp.data else None
+        with _CACHE_LOCK:
+            _PROFILE_CACHE[user_id] = profile
+        return profile
     except Exception:
         return None
 
@@ -170,8 +257,13 @@ def get_profile_for_user(user):
 
 
 def get_profile_for_request(request: Request):
+    cached = getattr(request.state, "current_profile", _REQUEST_UNSET)
+    if cached is not _REQUEST_UNSET:
+        return cached
     user = get_current_user(request)
-    return get_profile_for_user(user)
+    profile = get_profile_for_user(user)
+    request.state.current_profile = profile
+    return profile
 
 
 def redirect_to_login(request: Request):

@@ -1,0 +1,68 @@
+{% extends "berita_acara/base.html" %}
+
+{% block title %}Daftar Berita Acara{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div class="page-title">
+      <p class="page-kicker">Berita Acara</p>
+      <h1>Daftar Berita Acara</h1>
+      <p class="page-sub">Riwayat pengajuan Berita Acara di outlet Anda.</p>
+    </div>
+    <div class="page-actions">
+      <a class="btn ghost btn-sm" href="/">Kembali ke Dashboard</a>
+      <a class="btn primary" href="/berita-acara/form">Buat Baru</a>
+    </div>
+  </div>
+
+  {% if message %}
+  <div class="alert {% if status == 'success' %}success{% elif status == 'warning' %}warning{% else %}error{% endif %}">
+    {{ message }}
+  </div>
+  {% endif %}
+
+  <section class="card table-card">
+    <div class="card-head">
+      <h2>Riwayat Berita Acara</h2>
+      <span class="badge muted">{{ rows|length }} Data</span>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>No Form</th>
+            <th>Purpose</th>
+            <th>Outlet</th>
+            <th>Status</th>
+            <th>Created At</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if rows %}
+            {% for row in rows %}
+            <tr>
+              <td>
+                {% if row.id %}
+                <a class="table-link" href="/berita-acara/{{ row.id }}">{{ row.no_form }}</a>
+                {% else %}
+                {{ row.no_form }}
+                {% endif %}
+              </td>
+              <td>{{ row.purpose_name }}</td>
+              <td>{{ row.outlet_name }}</td>
+              <td>
+                <span class="status-pill status-sent">{{ row.status }}</span>
+              </td>
+              <td>{{ row.created_at }}</td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="5" class="table-empty">Belum ada data Berita Acara.</td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

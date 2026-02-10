@@ -371,9 +371,9 @@ body {
 }
 
 .app-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
+  width: 18%;
+  aspect-ratio: 1 / 1;
+  border-radius: 28%;
   background: linear-gradient(135deg, #f6f1ff 0%, #ecf1ff 100%);
   color: var(--accent);
   display: inline-flex;
@@ -381,14 +381,12 @@ body {
   justify-content: center;
 }
 
-.app-icon svg {
-  width: 32px;
-  height: 32px;
-}
-
+.app-icon svg,
 .app-icon-image {
-  width: 36px;
-  height: 36px;
+  max-width: 80%;
+  max-height: 80%;
+  width: auto;
+  height: auto;
   object-fit: contain;
 }
 
@@ -1065,6 +1063,29 @@ input[readonly] {
   margin-bottom: 16px;
 }
 
+.add-row-toolbar {
+  justify-content: flex-start;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+  margin-bottom: 0;
+}
+
+.add-row-stack {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.add-row-input {
+  max-width: 70px;
+  padding: 6px 10px;
+}
+
 .items-hint {
   margin: 0;
   color: var(--muted);
@@ -1346,6 +1367,38 @@ input[readonly] {
   font-size: 0.78rem;
   color: var(--muted);
   margin-top: 2px;
+}
+
+.jexcel_container {
+  border: 1px solid #dde3ea;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 10px 26px rgba(27, 43, 60, 0.08);
+}
+
+.jexcel > thead > tr > td {
+  background: #f6f7f9;
+  color: #2f2b3a;
+  font-weight: 600;
+  border-color: #e1e5ea;
+}
+
+.jexcel > tbody > tr:nth-child(even) > td {
+  background: #fafbfc;
+}
+
+.jexcel > tbody > tr:hover > td {
+  background: #f0f5ff;
+}
+
+.jexcel td.highlight,
+.jexcel td.selected {
+  background: #e7f0ff;
+}
+
+.jexcel .jexcel_row {
+  background: #f7f7f7;
+  color: #5a5f6d;
 }
 
 .upload-field {
