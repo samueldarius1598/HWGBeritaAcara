@@ -11,8 +11,8 @@ from core.config import get_setting
 from core.database import get_supabase_client
 from core.factory import templates
 from core.masterdata import (
+    get_master_products_result,
     get_master_outlets,
-    get_master_products,
     normalize_outlet_id,
     resolve_outlet_id,
 )
@@ -498,8 +498,16 @@ def api_products(request: Request, outlet_id: str | None = None):
         company_id = int(outlet_id)
     except ValueError:
         return JSONResponse([])
-    products = get_master_products(company_id)
-    return JSONResponse(products)
+    try:
+        result = get_master_products_result(company_id)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    response = JSONResponse(result.get("data") or [])
+    response.headers["X-Products-Cache"] = str(result.get("cache_state") or "miss")
+    response.headers["X-Products-Completeness"] = str(
+        result.get("completeness") or "esb_only"
+    )
+    return response
 
 
 @router.get("/success")

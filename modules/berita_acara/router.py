@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from core.concurrency import run_blocking
 from core.database import get_supabase_client
 from core.factory import templates
-from core.masterdata import get_master_products
+from core.masterdata import get_master_products_result
 from core.security import get_current_user, get_profile_for_user, redirect_to_login
 from .repository import BeritaAcaraRepository
 from .services import (
@@ -182,10 +182,15 @@ def api_products(request: Request):
     except ValueError:
         return JSONResponse([])
     try:
-        products = get_master_products(company_id)
+        result = get_master_products_result(company_id)
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
-    return JSONResponse(products)
+    response = JSONResponse(result.get("data") or [])
+    response.headers["X-Products-Cache"] = str(result.get("cache_state") or "miss")
+    response.headers["X-Products-Completeness"] = str(
+        result.get("completeness") or "esb_only"
+    )
+    return response
 
 
 @router.get("/api/berita-acara/purposes")

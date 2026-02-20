@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from .masterdata import prewarm_master_products_async
 from .security import apply_auth_cookie_updates, ensure_superadmin_account
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -62,5 +63,6 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     def _on_startup():
         ensure_superadmin_account()
+        prewarm_master_products_async()
 
     return app

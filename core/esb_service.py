@@ -1,4 +1,6 @@
 ﻿import time
+import json
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -16,8 +18,12 @@ from .credentials import (
     build_esb_credentials,
 )
 from .esb_config import ESBConfigGAS
+from .shared_cache import get_default_shared_cache
 
 DEFAULT_ESB_BASE_URL = "https://services.esb.co.id/core"
+DEFAULT_ESB_PRODUCTS_SOFT_TTL = 1800
+DEFAULT_ESB_PRODUCTS_STALE_TTL = 86400
+ESB_SHARED_CACHE_KEY = "master_products:esb:v1"
 
 
 def _coerce_int(value, default):
@@ -88,7 +94,8 @@ class EsbService:
         token_buffer_sec: int = 300,
         refresh_ttl_sec: int = 86400,
         product_detail_ttl_sec: int = 3600,
-        product_list_ttl_sec: int = 600,
+        product_list_ttl_sec: int = DEFAULT_ESB_PRODUCTS_SOFT_TTL,
+        product_list_stale_ttl_sec: int = DEFAULT_ESB_PRODUCTS_STALE_TTL,
         sheet_cache_ttl_sec: int = 60,
         flag_active: int = 1,
     ):
@@ -111,11 +118,25 @@ class EsbService:
         self.token_buffer_sec = token_buffer_sec
         self.refresh_ttl_sec = refresh_ttl_sec
         self.product_detail_ttl_sec = product_detail_ttl_sec
-        self.product_list_ttl_sec = product_list_ttl_sec
+        self.product_list_ttl_sec = _coerce_int(
+            get_setting("ESB_LIST_SOFT_TTL_SEC"), product_list_ttl_sec
+        )
+        self.product_list_stale_ttl_sec = _coerce_int(
+            get_setting("ESB_LIST_STALE_TTL_SEC"), product_list_stale_ttl_sec
+        )
+        if self.product_list_stale_ttl_sec < self.product_list_ttl_sec:
+            self.product_list_stale_ttl_sec = self.product_list_ttl_sec
         self.sheet_cache_ttl_sec = sheet_cache_ttl_sec
         self.flag_active = flag_active
 
         self.session = requests.Session()
+        pool_size = max(_coerce_int(get_setting("ESB_HTTP_POOL_SIZE"), 48), 8)
+        adapter = requests.adapters.HTTPAdapter(
+            pool_connections=pool_size,
+            pool_maxsize=pool_size,
+        )
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
         self.token: Optional[str] = None
         self.token_expiry = 0.0
         self.company_code = ""
@@ -128,6 +149,7 @@ class EsbService:
         self._product_detail_cache: Dict[int, Dict[str, Any]] = {}
         self._product_list_cache: Dict[str, Any] = {"expires": 0.0, "data": []}
         self._sheet_cache: Dict[str, Any] = {"expires": 0.0, "data": {}, "store": None}
+        self._detail_session_local = threading.local()
 
     def _get_sheet_store(self) -> Optional[GoogleSheetCredentialsStore]:
         if self.sheet_store is not None:
@@ -241,6 +263,64 @@ class EsbService:
             "uom_name": selected_detail.get("uomName", ""),
             "price": float(selected_detail.get("basePrice", 0) or 0),
         }
+
+    @staticmethod
+    def _coerce_float(value, default):
+        if value in (None, ""):
+            return default
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _detail_retry_delay_sec(self):
+        return max(
+            self._coerce_float(get_setting("ESB_DETAIL_RETRY_DELAY_SEC"), 0.2),
+            0.0,
+        )
+
+    def _cache_jitter_ratio(self):
+        return max(
+            self._coerce_float(get_setting("MASTER_PRODUCTS_TTL_JITTER_RATIO"), 0.1),
+            0.0,
+        )
+
+    def _set_local_product_list_cache(self, products: List[Dict[str, Any]]) -> None:
+        if self.product_list_ttl_sec > 0:
+            self._product_list_cache = {
+                "expires": time.time() + self.product_list_ttl_sec,
+                "data": products,
+            }
+
+    def _set_shared_product_list_cache(self, products: List[Dict[str, Any]]) -> None:
+        try:
+            get_default_shared_cache().set_cache_entry(
+                ESB_SHARED_CACHE_KEY,
+                products,
+                soft_ttl=self.product_list_ttl_sec,
+                stale_ttl=self.product_list_stale_ttl_sec,
+                jitter_ratio=self._cache_jitter_ratio(),
+            )
+        except Exception as exc:
+            print(f"[ESB Warning] Gagal menulis shared cache produk: {exc}")
+
+    def _get_thread_detail_session(self, headers: Dict[str, str], pool_size: int):
+        session = getattr(self._detail_session_local, "session", None)
+        if session is None:
+            session = requests.Session()
+            adapter = requests.adapters.HTTPAdapter(
+                pool_connections=pool_size,
+                pool_maxsize=pool_size,
+            )
+            session.mount("https://", adapter)
+            session.mount("http://", adapter)
+            self._detail_session_local.session = session
+        session.headers.update(headers)
+        return session
+
+    def _log_fetch_metrics(self, **fields) -> None:
+        payload = {"event": "fetch_all_products", **fields}
+        print("[ESB Metrics] " + json.dumps(payload, ensure_ascii=True, separators=(",", ":")))
 
 
     def _persist_session(
@@ -468,6 +548,7 @@ class EsbService:
         if cached and time.time() < cached.get("expires", 0):
             return cached.get("data", {"uom_name": "", "price": 0.0})
         self._ensure_access_token()
+        retry_delay = self._detail_retry_delay_sec()
         url = f"{self.base_url}/product/{product_id}"
         try:
             for attempt in range(2):
@@ -490,25 +571,61 @@ class EsbService:
                 except requests.exceptions.RequestException:
                     if attempt == 1:
                         raise
-                    time.sleep(1)
+                    if retry_delay > 0:
+                        time.sleep(retry_delay)
         except Exception as exc:
             print(f"[ESB Warning] Gagal ambil detail ID {product_id}: {exc}")
         return {"uom_name": "", "price": 0.0}
 
-    def fetch_all_products(self) -> List[Dict[str, Any]]:
+    def fetch_all_products(
+        self,
+        *,
+        allow_stale: bool = True,
+        force_refresh: bool = False,
+    ) -> List[Dict[str, Any]]:
         """
         Menarik seluruh data produk (pagination loop + detail lookup).
         """
+        started = time.perf_counter()
         now = time.time()
         if (
-            self._product_list_cache["data"]
+            not force_refresh
+            and self._product_list_cache["data"]
             and now < self._product_list_cache["expires"]
         ):
             return self._product_list_cache["data"]
+
+        shared_cache = get_default_shared_cache()
+        shared_entry = shared_cache.get_cache_entry(ESB_SHARED_CACHE_KEY, allow_stale=True)
+        shared_state = shared_entry["state"]
+        shared_data = shared_entry.get("data") or []
+
+        if not force_refresh and shared_state == "fresh" and shared_data:
+            self._set_local_product_list_cache(shared_data)
+            return shared_data
+
+        if not force_refresh and allow_stale and shared_state == "stale" and shared_data:
+            self._set_local_product_list_cache(shared_data)
+            self._log_fetch_metrics(
+                source="shared_stale",
+                page_count=0,
+                total_products=len(shared_data),
+                detail_total=0,
+                detail_cached=0,
+                detail_fetched=0,
+                detail_hit_ratio=0.0,
+                duration_ms=round((time.perf_counter() - started) * 1000.0, 2),
+            )
+            return shared_data
+
         self._ensure_access_token()
         all_products: List[Dict[str, Any]] = []
         page = 1
         limit = self.list_limit
+        page_count = 0
+        detail_cached = 0
+        detail_fetched = 0
+        retry_delay = self._detail_retry_delay_sec()
 
         while True:
             url = f"{self.base_url}/product/list"
@@ -533,6 +650,7 @@ class EsbService:
                 if not data_list:
                     break
 
+                page_count += 1
                 detail_map: Dict[int, Dict[str, Any]] = {}
                 fresh_details: Dict[int, Dict[str, Any]] = {}
                 to_fetch: List[int] = []
@@ -544,6 +662,7 @@ class EsbService:
                         continue
                     cached = self._product_detail_cache.get(product_id)
                     if cached and now < cached.get("expires", 0):
+                        detail_cached += 1
                         detail_map[product_id] = cached.get(
                             "data", {"uom_name": "", "price": 0.0}
                         )
@@ -555,7 +674,7 @@ class EsbService:
                     base_url = self.base_url
                     timeout = self.detail_timeout
                     max_workers = _coerce_int(
-                        get_setting("ESB_DETAIL_MAX_WORKERS"), 16
+                        get_setting("ESB_DETAIL_MAX_WORKERS"), 24
                     )
                     if max_workers <= 0:
                         max_workers = 1
@@ -570,25 +689,28 @@ class EsbService:
                     except (TypeError, ValueError):
                         batch_delay = 0.0
                     unique_ids = list({pid for pid in to_fetch if pid})
+                    detail_fetched += len(unique_ids)
                     unauthorized_ids: List[int] = []
 
                     def _fetch_detail(pid: int):
-                        url = f"{base_url}/product/{pid}"
+                        detail_url = f"{base_url}/product/{pid}"
                         try:
-                            with requests.Session() as session:
-                                session.headers.update(headers)
-                                for attempt in range(2):
-                                    try:
-                                        resp = session.get(url, timeout=timeout)
-                                        if resp.status_code in (401, 403):
-                                            return pid, None, "unauthorized"
-                                        resp.raise_for_status()
-                                        data = resp.json() or {}
-                                        return pid, self._extract_product_detail(data), None
-                                    except requests.exceptions.RequestException as exc:
-                                        if attempt == 1:
-                                            return pid, None, str(exc)
-                                        time.sleep(1)
+                            session = self._get_thread_detail_session(
+                                headers, pool_size=max(max_workers, 8)
+                            )
+                            for attempt in range(2):
+                                try:
+                                    detail_resp = session.get(detail_url, timeout=timeout)
+                                    if detail_resp.status_code in (401, 403):
+                                        return pid, None, "unauthorized"
+                                    detail_resp.raise_for_status()
+                                    data = detail_resp.json() or {}
+                                    return pid, self._extract_product_detail(data), None
+                                except requests.exceptions.RequestException as exc:
+                                    if attempt == 1:
+                                        return pid, None, str(exc)
+                                    if retry_delay > 0:
+                                        time.sleep(retry_delay)
                         except Exception as exc:
                             return pid, None, str(exc)
                         return pid, None, "unknown error"
@@ -663,10 +785,26 @@ class EsbService:
                 print(f"[ESB Error] Fetch list page {page} failed: {str(exc)}")
                 break
 
-        if self.product_list_ttl_sec > 0:
-            self._product_list_cache = {
-                "expires": time.time() + self.product_list_ttl_sec,
-                "data": all_products,
-            }
+        if all_products:
+            self._set_local_product_list_cache(all_products)
+            self._set_shared_product_list_cache(all_products)
+
+        if not all_products and allow_stale and shared_data:
+            self._set_local_product_list_cache(shared_data)
+            all_products = shared_data
+
+        detail_total = detail_cached + detail_fetched
+        hit_ratio = (float(detail_cached) / detail_total) if detail_total else 0.0
+        self._log_fetch_metrics(
+            source="network" if all_products else "fallback",
+            page_count=page_count,
+            total_products=len(all_products),
+            detail_total=detail_total,
+            detail_cached=detail_cached,
+            detail_fetched=detail_fetched,
+            detail_hit_ratio=round(hit_ratio, 4),
+            duration_ms=round((time.perf_counter() - started) * 1000.0, 2),
+            shared_state=shared_state,
+        )
         return all_products
 
