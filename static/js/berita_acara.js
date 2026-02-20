@@ -500,50 +500,135 @@
       }, 2000);
     };
 
-    const loadProducts = async () => {
-      showProductLoadingOverlay("Sedang Menarik Product Odoo dan ESB...");
-      if (itemsLoading) {
-        itemsLoading.textContent = "Memuat daftar produk...";
+    const buildProductSource = (products) =>
+      products.map((product) => {
+        const name = String(product.name || "");
+        const code = String(product.default_code || "-");
+        const uom = String(product.uom_name || "-");
+        const key = String(product.default_code || "").trim() || name;
+        return {
+          id: key,
+          name: name || key,
+          title: `${code} - ${uom}`,
+        };
+      });
+
+    const applyProducts = (products) => {
+      productList = products;
+      productIndexByCode = new Map(
+        products
+          .filter((product) => String(product.default_code || "").trim())
+          .map((product) => [normalizeKey(String(product.default_code || "")), product])
+      );
+      productIndexByName = new Map(
+        products.map((product) => [normalizeKey(String(product.name || "")), product])
+      );
+      if (
+        spreadsheet &&
+        spreadsheet.options &&
+        Array.isArray(spreadsheet.options.columns) &&
+        spreadsheet.options.columns[0]
+      ) {
+        spreadsheet.options.columns[0].source = buildProductSource(products);
+        if (typeof spreadsheet.refresh === "function") {
+          spreadsheet.refresh();
+        }
       }
+    };
+
+    const fetchProductsWithTimeout = async (timeoutMs = 3000) => {
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), timeoutMs);
       try {
-        const resp = await fetch(productsUrl);
+        const resp = await fetch(productsUrl, { signal: controller.signal });
         if (!resp.ok) {
           throw new Error("Request gagal");
         }
         const data = await resp.json();
         const products = Array.isArray(data) ? data : [];
-        productList = products;
-        productIndexByCode = new Map(
-          products
-            .filter((product) => String(product.default_code || "").trim())
-            .map((product) => [
-              normalizeKey(String(product.default_code || "")),
-              product,
-            ])
+        return {
+          products,
+          cacheState:
+            (resp.headers.get("X-Products-Cache") || "miss").toLowerCase(),
+          completeness: (
+            resp.headers.get("X-Products-Completeness") || "esb_only"
+          ).toLowerCase(),
+        };
+      } finally {
+        window.clearTimeout(timer);
+      }
+    };
+
+    let productAutoRefreshScheduled = false;
+    const loadProducts = async ({
+      timeoutMs = 3000,
+      allowRetry = true,
+      useOverlay = false,
+    } = {}) => {
+      if (useOverlay) {
+        showProductLoadingOverlay("Sedang Menarik Product Odoo dan ESB...");
+      }
+      if (itemsLoading) {
+        itemsLoading.textContent = "Memuat daftar produk...";
+      }
+      try {
+        const { products, cacheState, completeness } = await fetchProductsWithTimeout(
+          timeoutMs
         );
-        productIndexByName = new Map(
-          products.map((product) => [
-            normalizeKey(String(product.name || "")),
-            product,
-          ])
-        );
+        applyProducts(products);
         if (itemsLoading) {
-          itemsLoading.textContent = `Produk tersedia: ${products.length} item.`;
+          itemsLoading.textContent = `Produk tersedia: ${products.length} item (${completeness}, ${cacheState}).`;
         }
-        completeProductLoadingOverlay(
-          `Produk berhasil dimuat (${products.length} item).`
-        );
+        if (useOverlay) {
+          completeProductLoadingOverlay(
+            `Produk berhasil dimuat (${products.length} item).`
+          );
+        }
+        if (
+          allowRetry &&
+          !productAutoRefreshScheduled &&
+          (completeness === "odoo_only" || completeness === "esb_only")
+        ) {
+          productAutoRefreshScheduled = true;
+          window.setTimeout(() => {
+            loadProducts({
+              timeoutMs,
+              allowRetry: false,
+              useOverlay: false,
+            }).finally(() => {
+              productAutoRefreshScheduled = false;
+            });
+          }, 2500);
+        }
         return products;
       } catch (error) {
+        const isTimeout = error && error.name === "AbortError";
         if (itemsLoading) {
-          itemsLoading.textContent = "Gagal memuat produk.";
+          itemsLoading.textContent = isTimeout
+            ? "Load awal produk timeout (3 detik), memakai data sementara."
+            : "Gagal memuat produk.";
         }
-        productIndexByCode = new Map();
-        productIndexByName = new Map();
-        productList = [];
-        setProductLoadingMessage("Gagal memuat daftar produk.");
-        closeProductLoadingOverlay();
-        return [];
+        if (useOverlay) {
+          setProductLoadingMessage(
+            isTimeout
+              ? "Timeout 3 detik. Data akan disegarkan di background."
+              : "Gagal memuat daftar produk."
+          );
+          closeProductLoadingOverlay();
+        }
+        if (allowRetry && !productAutoRefreshScheduled) {
+          productAutoRefreshScheduled = true;
+          window.setTimeout(() => {
+            loadProducts({
+              timeoutMs,
+              allowRetry: false,
+              useOverlay: false,
+            }).finally(() => {
+              productAutoRefreshScheduled = false;
+            });
+          }, 2500);
+        }
+        return productList;
       }
     };
 
@@ -652,20 +737,7 @@
       }, 0);
     };
 
-    const initSpreadsheet = async () => {
-      const products = await loadProducts();
-      const productSource = products.map((product) => {
-        const name = String(product.name || "");
-        const code = String(product.default_code || "-");
-        const uom = String(product.uom_name || "-");
-        const key = String(product.default_code || "").trim() || name;
-        return {
-          id: key,
-          name: name || key,
-          title: `${code} - ${uom}`,
-        };
-      });
-
+    const initSpreadsheet = () => {
       spreadsheet = spreadsheetFactory(spreadsheetEl, {
         data: buildEmptyRows(6),
         minDimensions: [5, 6],
@@ -674,7 +746,7 @@
             type: "dropdown",
             title: "Nama Item",
             width: 300,
-            source: productSource,
+            source: [],
             autocomplete: true,
           },
           { type: "text", title: "Kode Item", width: 140, readOnly: true },
@@ -1127,6 +1199,11 @@
 
     loadPurposes();
     initSpreadsheet();
+    loadProducts({
+      timeoutMs: 3000,
+      allowRetry: true,
+      useOverlay: false,
+    });
   };
 
   window.initBeritaAcaraForm = initBeritaAcaraForm;

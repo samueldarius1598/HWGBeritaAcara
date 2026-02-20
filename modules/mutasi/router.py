@@ -507,6 +507,9 @@ def api_products(request: Request, outlet_id: str | None = None):
     response.headers["X-Products-Completeness"] = str(
         result.get("completeness") or "esb_only"
     )
+    response.headers["X-Products-Source"] = str(
+        result.get("source") or "odoo_first_hybrid_v1"
+    )
     return response
 
 

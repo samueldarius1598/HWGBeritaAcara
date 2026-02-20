@@ -42,6 +42,7 @@
   })();
   const outletContexts = [];
   const productCache = new Map();
+  const productRetryState = new Map();
   let currentProducts = [];
   const isOutletLocked = outletNameInput?.dataset.locked === "true";
   let productLoadingTimer = null;
@@ -879,7 +880,51 @@
     updateRowActions();
   };
 
-  const loadProducts = async (outletId) => {
+  const fetchProductsWithTimeout = async (outletId, timeoutMs = 3000) => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(
+        `/api/products?outlet_id=${encodeURIComponent(outletId)}`,
+        { signal: controller.signal }
+      );
+      if (!response.ok) {
+        throw new Error("Request gagal");
+      }
+      const data = await response.json();
+      return {
+        products: Array.isArray(data) ? data : [],
+        completeness: (
+          response.headers.get("X-Products-Completeness") || "esb_only"
+        ).toLowerCase(),
+        cacheState: (response.headers.get("X-Products-Cache") || "miss").toLowerCase(),
+      };
+    } finally {
+      window.clearTimeout(timer);
+    }
+  };
+
+  const queuePartialRetry = (outletId) => {
+    if (productRetryState.get(outletId)) {
+      return;
+    }
+    productRetryState.set(outletId, true);
+    window.setTimeout(() => {
+      loadProducts(outletId, {
+        allowRetry: false,
+        showOverlay: false,
+        forceRefresh: true,
+        resetRows: false,
+      }).finally(() => {
+        productRetryState.delete(outletId);
+      });
+    }, 1000);
+  };
+
+  const loadProducts = async (
+    outletId,
+    { allowRetry = true, showOverlay = true, forceRefresh = false, resetRows = true } = {}
+  ) => {
     if (!outletId) {
       currentProducts = [];
       const rows = itemsBody.querySelectorAll(".item-row");
@@ -890,47 +935,76 @@
       closeProductLoadingOverlay();
       return;
     }
-    showProductLoadingOverlay("Sedang Menarik Product Odoo dan ESB...");
-    if (productCache.has(outletId)) {
-      currentProducts = productCache.get(outletId);
+
+    if (showOverlay) {
+      showProductLoadingOverlay("Sedang Menarik Product Odoo dan ESB...");
+    }
+
+    if (productCache.has(outletId) && !forceRefresh) {
+      currentProducts = productCache.get(outletId) || [];
       if (itemsLoading) {
         itemsLoading.textContent = `Produk tersedia: ${currentProducts.length} item.`;
       }
-      const rows = itemsBody.querySelectorAll(".item-row");
-      rows.forEach(clearRow);
-      completeProductLoadingOverlay(
-        `Produk berhasil dimuat (${currentProducts.length} item).`
-      );
+      if (resetRows) {
+        const rows = itemsBody.querySelectorAll(".item-row");
+        rows.forEach(clearRow);
+      }
+      if (showOverlay) {
+        completeProductLoadingOverlay(
+          `Produk berhasil dimuat (${currentProducts.length} item).`
+        );
+      }
       return;
     }
+
     if (itemsLoading) {
       itemsLoading.textContent = "Memuat daftar produk...";
     }
+
     try {
-      const response = await fetch(
-        `/api/products?outlet_id=${encodeURIComponent(outletId)}`
+      const { products, completeness, cacheState } = await fetchProductsWithTimeout(
+        outletId,
+        3000
       );
-      if (!response.ok) {
-        throw new Error("Request gagal");
-      }
-      const data = await response.json();
-      currentProducts = Array.isArray(data) ? data : [];
+      currentProducts = products;
       productCache.set(outletId, currentProducts);
       if (itemsLoading) {
-        itemsLoading.textContent = `Produk tersedia: ${currentProducts.length} item.`;
+        itemsLoading.textContent = `Produk tersedia: ${currentProducts.length} item (${completeness}, ${cacheState}).`;
       }
-      const rows = itemsBody.querySelectorAll(".item-row");
-      rows.forEach(clearRow);
-      completeProductLoadingOverlay(
-        `Produk berhasil dimuat (${currentProducts.length} item).`
-      );
+      if (resetRows) {
+        const rows = itemsBody.querySelectorAll(".item-row");
+        rows.forEach(clearRow);
+      }
+      if (showOverlay) {
+        completeProductLoadingOverlay(
+          `Produk berhasil dimuat (${currentProducts.length} item).`
+        );
+      }
+      if (
+        allowRetry &&
+        (completeness === "odoo_only" || completeness === "esb_only")
+      ) {
+        if (itemsLoading) {
+          itemsLoading.textContent = `Produk sementara: ${currentProducts.length} item (${completeness}). Sinkronisasi ulang...`;
+        }
+        queuePartialRetry(outletId);
+      }
     } catch (error) {
-      currentProducts = [];
+      const isTimeout = error && error.name === "AbortError";
+      currentProducts = productCache.get(outletId) || [];
       if (itemsLoading) {
-        itemsLoading.textContent = "Gagal memuat produk.";
+        itemsLoading.textContent = isTimeout
+          ? "Load produk timeout (3 detik). Coba ulang sebentar lagi."
+          : "Gagal memuat produk.";
       }
-      setProductLoadingMessage("Gagal memuat daftar produk.");
-      closeProductLoadingOverlay();
+      if (showOverlay) {
+        setProductLoadingMessage(
+          isTimeout
+            ? "Timeout 3 detik saat memuat produk."
+            : "Gagal memuat daftar produk."
+        );
+        closeProductLoadingOverlay();
+      }
     }
   };
 

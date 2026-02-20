@@ -1,7 +1,11 @@
 ﻿import time
 import json
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    TimeoutError as FuturesTimeoutError,
+    as_completed,
+)
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -23,7 +27,8 @@ from .shared_cache import get_default_shared_cache
 DEFAULT_ESB_BASE_URL = "https://services.esb.co.id/core"
 DEFAULT_ESB_PRODUCTS_SOFT_TTL = 1800
 DEFAULT_ESB_PRODUCTS_STALE_TTL = 86400
-ESB_SHARED_CACHE_KEY = "master_products:esb:v1"
+ESB_SHARED_CACHE_KEY = "master_products_v2:esb_full"
+ESB_SHARED_CACHE_KEY_LEGACY = "master_products:esb:v1"
 
 
 def _coerce_int(value, default):
@@ -294,15 +299,83 @@ class EsbService:
 
     def _set_shared_product_list_cache(self, products: List[Dict[str, Any]]) -> None:
         try:
-            get_default_shared_cache().set_cache_entry(
-                ESB_SHARED_CACHE_KEY,
-                products,
-                soft_ttl=self.product_list_ttl_sec,
-                stale_ttl=self.product_list_stale_ttl_sec,
-                jitter_ratio=self._cache_jitter_ratio(),
-            )
+            shared = get_default_shared_cache()
+            for cache_key in (ESB_SHARED_CACHE_KEY, ESB_SHARED_CACHE_KEY_LEGACY):
+                shared.set_cache_entry(
+                    cache_key,
+                    products,
+                    soft_ttl=self.product_list_ttl_sec,
+                    stale_ttl=self.product_list_stale_ttl_sec,
+                    jitter_ratio=self._cache_jitter_ratio(),
+                )
         except Exception as exc:
             print(f"[ESB Warning] Gagal menulis shared cache produk: {exc}")
+
+    def _read_shared_product_list_cache(self, *, allow_stale: bool = True):
+        shared = get_default_shared_cache()
+        for cache_key in (ESB_SHARED_CACHE_KEY, ESB_SHARED_CACHE_KEY_LEGACY):
+            entry = shared.get_cache_entry(cache_key, allow_stale=allow_stale)
+            data = entry.get("data") or []
+            if entry["state"] in {"fresh", "stale"} and data:
+                if cache_key != ESB_SHARED_CACHE_KEY:
+                    self._set_shared_product_list_cache(data)
+                return entry, data
+        return {"state": "miss", "data": []}, []
+
+    def get_cached_products(self, *, allow_stale: bool = True):
+        now = time.time()
+        if self._product_list_cache["data"] and now < self._product_list_cache["expires"]:
+            return self._product_list_cache["data"], "fresh"
+        shared_entry, shared_data = self._read_shared_product_list_cache(
+            allow_stale=allow_stale
+        )
+        state = shared_entry["state"]
+        if shared_data:
+            self._set_local_product_list_cache(shared_data)
+            return shared_data, state
+        return [], "miss"
+
+    def fetch_all_products_full(
+        self,
+        *,
+        allow_stale: bool = True,
+        force_refresh: bool = False,
+        hard_timeout_sec: Optional[float] = None,
+    ) -> List[Dict[str, Any]]:
+        timeout_value = hard_timeout_sec
+        if timeout_value in (None, ""):
+            timeout_value = self._coerce_float(
+                get_setting("MASTER_PRODUCTS_ESB_FULL_REFRESH_TIMEOUT_SEC"), 0.0
+            )
+        timeout_value = max(self._coerce_float(timeout_value, 0.0), 0.0)
+        if timeout_value <= 0:
+            return self.fetch_all_products(
+                allow_stale=allow_stale, force_refresh=force_refresh
+            )
+
+        started = time.perf_counter()
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                self.fetch_all_products,
+                allow_stale=allow_stale,
+                force_refresh=force_refresh,
+            )
+            try:
+                return future.result(timeout=timeout_value)
+            except FuturesTimeoutError:
+                cached, cache_state = self.get_cached_products(allow_stale=True)
+                self._log_fetch_metrics(
+                    source="hard_timeout_fallback",
+                    page_count=0,
+                    total_products=len(cached),
+                    detail_total=0,
+                    detail_cached=0,
+                    detail_fetched=0,
+                    detail_hit_ratio=0.0,
+                    duration_ms=round((time.perf_counter() - started) * 1000.0, 2),
+                    shared_state=cache_state,
+                )
+                return cached
 
     def _get_thread_detail_session(self, headers: Dict[str, str], pool_size: int):
         session = getattr(self._detail_session_local, "session", None)
@@ -595,10 +668,10 @@ class EsbService:
         ):
             return self._product_list_cache["data"]
 
-        shared_cache = get_default_shared_cache()
-        shared_entry = shared_cache.get_cache_entry(ESB_SHARED_CACHE_KEY, allow_stale=True)
+        shared_entry, shared_data = self._read_shared_product_list_cache(
+            allow_stale=True
+        )
         shared_state = shared_entry["state"]
-        shared_data = shared_entry.get("data") or []
 
         if not force_refresh and shared_state == "fresh" and shared_data:
             self._set_local_product_list_cache(shared_data)
