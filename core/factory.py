@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .security import ensure_superadmin_account
+from .security import apply_auth_cookie_updates, ensure_superadmin_account
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 
@@ -41,6 +41,12 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Modular Mutasi App")
 
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+    @app.middleware("http")
+    async def _auth_cookie_middleware(request, call_next):
+        response = await call_next(request)
+        apply_auth_cookie_updates(request, response)
+        return response
 
     for module_name in _discover_modules():
         try:

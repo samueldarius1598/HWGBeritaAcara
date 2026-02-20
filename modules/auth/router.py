@@ -7,6 +7,8 @@ from core.database import get_supabase_client
 from core.factory import templates
 from core.masterdata import get_master_outlets, get_outlet_by_id, normalize_outlet_id
 from core.security import (
+    REMEMBER_EMAIL_COOKIE_NAME,
+    REMEMBER_FLAG_COOKIE_NAME,
     SUPERADMIN_FULL_NAME,
     SUPERADMIN_OUTLET,
     clear_auth_cookie,
@@ -16,9 +18,15 @@ from core.security import (
     is_superadmin,
     redirect_to_login,
     set_auth_cookie,
+    set_refresh_cookie,
+    set_login_hint_cookie,
 )
 
 router = APIRouter(tags=["auth"])
+
+
+def _normalize_login_email(value: str) -> str:
+    return (value or "").strip().strip('"').strip("'")
 
 
 def _append_welcome_param(target_url: str) -> str:
@@ -42,6 +50,10 @@ def login(request: Request):
     next_url = request.query_params.get("next") or "/"
     message = request.query_params.get("message")
     status = request.query_params.get("status")
+    remembered_email = _normalize_login_email(
+        request.cookies.get(REMEMBER_EMAIL_COOKIE_NAME, "")
+    )
+    remember_me = request.cookies.get(REMEMBER_FLAG_COOKIE_NAME) == "1"
     return templates.TemplateResponse(
         "login.html",
         {
@@ -49,6 +61,8 @@ def login(request: Request):
             "next_url": next_url,
             "message": message,
             "status": status,
+            "login_email": remembered_email,
+            "remember_me": remember_me,
         },
     )
 
@@ -56,10 +70,13 @@ def login(request: Request):
 @router.post("/login")
 def login_submit(
     request: Request,
+    username: str = Form(""),
     email: str = Form(""),
     password: str = Form(""),
     next: str = Form("/"),
+    remember_me: bool = Form(False),
 ):
+    login_email = _normalize_login_email(email or username)
     supabase = get_supabase_client()
     if not supabase:
         return templates.TemplateResponse(
@@ -69,12 +86,27 @@ def login_submit(
                 "next_url": next or "/",
                 "message": "Supabase belum dikonfigurasi.",
                 "status": "error",
+                "login_email": login_email,
+                "remember_me": remember_me,
+            },
+            status_code=400,
+        )
+    if not login_email or not password:
+        return templates.TemplateResponse(
+            "login.html",
+            {
+                "request": request,
+                "next_url": next or "/",
+                "message": "Email dan password wajib diisi.",
+                "status": "error",
+                "login_email": login_email,
+                "remember_me": remember_me,
             },
             status_code=400,
         )
     try:
         auth_response = supabase.auth.sign_in_with_password(
-            {"email": email, "password": password}
+            {"email": login_email, "password": password}
         )
         session = auth_response.session
         if not session:
@@ -85,6 +117,8 @@ def login_submit(
                     "next_url": next or "/",
                     "message": "Login gagal. Periksa email atau password.",
                     "status": "error",
+                    "login_email": login_email,
+                    "remember_me": remember_me,
                 },
                 status_code=400,
             )
@@ -97,9 +131,12 @@ def login_submit(
             )
         target_url = _append_welcome_param(next or "/")
         response = RedirectResponse(url=target_url, status_code=303)
-        set_auth_cookie(response, session)
+        set_auth_cookie(response, session, remember_me=remember_me)
+        set_refresh_cookie(response, session, remember_me=remember_me)
+        set_login_hint_cookie(response, login_email, remember_me=remember_me)
         return response
-    except Exception:
+    except Exception as exc:
+        print(f"[Auth Login Error] {exc}")
         return templates.TemplateResponse(
             "login.html",
             {
@@ -107,6 +144,8 @@ def login_submit(
                 "next_url": next or "/",
                 "message": "Login gagal. Periksa email atau password.",
                 "status": "error",
+                "login_email": login_email,
+                "remember_me": remember_me,
             },
             status_code=400,
         )
@@ -219,6 +258,7 @@ def register_submit(
             )
         response = RedirectResponse(url=next or "/", status_code=303)
         set_auth_cookie(response, session)
+        set_refresh_cookie(response, session)
         return response
     except Exception:
         return templates.TemplateResponse(

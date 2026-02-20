@@ -14,6 +14,9 @@ from .database import get_supabase_admin_client, get_supabase_client
 from .masterdata import get_outlet_by_id
 
 AUTH_COOKIE_NAME = "sb_access_token"
+REFRESH_COOKIE_NAME = "sb_refresh_token"
+REMEMBER_EMAIL_COOKIE_NAME = "sb_remember_email"
+REMEMBER_FLAG_COOKIE_NAME = "sb_remember_flag"
 COOKIE_SAMESITE = (get_setting("COOKIE_SAMESITE") or "lax").lower()
 COOKIE_SECURE = (get_setting("COOKIE_SECURE") or "false").lower() == "true"
 SUPERADMIN_EMAIL = (get_setting("SUPERADMIN_EMAIL") or "").strip().lower()
@@ -25,6 +28,10 @@ _USER_CACHE = TTLCache(maxsize=10_000, ttl=60)  # token -> (user, expires_at)
 _PROFILE_CACHE = TTLCache(maxsize=10_000, ttl=60)  # user_id -> profile
 _CACHE_LOCK = threading.Lock()
 _REQUEST_UNSET = object()
+REMEMBER_ME_MAX_AGE = 60 * 60 * 24 * 30
+_PENDING_AUTH_SESSION = "pending_auth_session"
+_PENDING_REMEMBER_ME = "pending_remember_me"
+_PENDING_CLEAR_AUTH_COOKIES = "pending_clear_auth_cookies"
 
 
 def _b64url_decode(data: str) -> bytes:
@@ -55,10 +62,13 @@ def _token_key(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def set_auth_cookie(response, session):
+def set_auth_cookie(response, session, remember_me: bool = False):
     if not session or not getattr(session, "access_token", None):
         return
-    max_age = getattr(session, "expires_in", None)
+    if remember_me:
+        max_age = REMEMBER_ME_MAX_AGE
+    else:
+        max_age = getattr(session, "expires_in", 3600)
     response.set_cookie(
         AUTH_COOKIE_NAME,
         session.access_token,
@@ -70,6 +80,66 @@ def set_auth_cookie(response, session):
     )
 
 
+def set_refresh_cookie(response, session, remember_me: bool = False):
+    if not session or not getattr(session, "refresh_token", None):
+        return
+    max_age = REMEMBER_ME_MAX_AGE if remember_me else None
+    response.set_cookie(
+        REFRESH_COOKIE_NAME,
+        session.refresh_token,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        max_age=max_age,
+        path="/",
+    )
+
+
+def set_login_hint_cookie(response, email: str, remember_me: bool = False):
+    if remember_me and email:
+        response.set_cookie(
+            REMEMBER_EMAIL_COOKIE_NAME,
+            email,
+            httponly=False,
+            secure=COOKIE_SECURE,
+            samesite=COOKIE_SAMESITE,
+            max_age=REMEMBER_ME_MAX_AGE,
+            path="/",
+        )
+        response.set_cookie(
+            REMEMBER_FLAG_COOKIE_NAME,
+            "1",
+            httponly=False,
+            secure=COOKIE_SECURE,
+            samesite=COOKIE_SAMESITE,
+            max_age=REMEMBER_ME_MAX_AGE,
+            path="/",
+        )
+        return
+    response.delete_cookie(REMEMBER_EMAIL_COOKIE_NAME, path="/")
+    response.delete_cookie(REMEMBER_FLAG_COOKIE_NAME, path="/")
+
+
+def _queue_auth_cookie_refresh(request: Request, session, remember_me: bool):
+    setattr(request.state, _PENDING_AUTH_SESSION, session)
+    setattr(request.state, _PENDING_REMEMBER_ME, remember_me)
+
+
+def _queue_auth_cookie_clear(request: Request):
+    setattr(request.state, _PENDING_CLEAR_AUTH_COOKIES, True)
+
+
+def apply_auth_cookie_updates(request: Request, response):
+    if getattr(request.state, _PENDING_CLEAR_AUTH_COOKIES, False):
+        response.delete_cookie(AUTH_COOKIE_NAME, path="/")
+        response.delete_cookie(REFRESH_COOKIE_NAME, path="/")
+    pending_session = getattr(request.state, _PENDING_AUTH_SESSION, None)
+    if pending_session:
+        remember_me = bool(getattr(request.state, _PENDING_REMEMBER_ME, False))
+        set_auth_cookie(response, pending_session, remember_me=remember_me)
+        set_refresh_cookie(response, pending_session, remember_me=remember_me)
+
+
 def clear_auth_cookie(response, request: Request | None = None):
     if request:
         token = request.cookies.get(AUTH_COOKIE_NAME)
@@ -78,6 +148,29 @@ def clear_auth_cookie(response, request: Request | None = None):
             with _CACHE_LOCK:
                 _USER_CACHE.pop(key, None)
     response.delete_cookie(AUTH_COOKIE_NAME, path="/")
+    response.delete_cookie(REFRESH_COOKIE_NAME, path="/")
+
+
+def _refresh_user_from_token(
+    request: Request, supabase, refresh_token: str, remember_me: bool
+):
+    try:
+        auth_response = supabase.auth.refresh_session(refresh_token)
+        session = getattr(auth_response, "session", None)
+        user = getattr(auth_response, "user", None)
+        if not session or not getattr(session, "access_token", None):
+            return None
+
+        ttl = _jwt_remaining_ttl(session.access_token, max_ttl=60)
+        expires_at = time.time() + max(ttl, 1)
+        with _CACHE_LOCK:
+            _USER_CACHE[_token_key(session.access_token)] = (user, expires_at)
+
+        _queue_auth_cookie_refresh(request, session, remember_me)
+        return user
+    except Exception:
+        _queue_auth_cookie_clear(request)
+        return None
 
 
 def get_current_user(request: Request, supabase=None):
@@ -87,7 +180,21 @@ def get_current_user(request: Request, supabase=None):
         return cached
 
     token = request.cookies.get(AUTH_COOKIE_NAME)
+    refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
+    remember_me = request.cookies.get(REMEMBER_FLAG_COOKIE_NAME) == "1"
+
     if not token:
+        if refresh_token:
+            if supabase is None:
+                supabase = get_supabase_client()
+            if not supabase:
+                request.state.current_user = None
+                return None
+            user = _refresh_user_from_token(
+                request, supabase, refresh_token, remember_me
+            )
+            request.state.current_user = user
+            return user
         request.state.current_user = None
         return None
 
@@ -121,6 +228,13 @@ def get_current_user(request: Request, supabase=None):
         request.state.current_user = user
         return user
     except Exception:
+        with _CACHE_LOCK:
+            _USER_CACHE.pop(key, None)
+        if refresh_token:
+            user = _refresh_user_from_token(request, supabase, refresh_token, remember_me)
+            request.state.current_user = user
+            return user
+        _queue_auth_cookie_clear(request)
         request.state.current_user = None
         return None
 

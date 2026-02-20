@@ -79,7 +79,7 @@
           </div>
           {% endif %}
 
-          <form action="/login" method="POST" class="modern-form">
+          <form action="/login" method="POST" class="modern-form" autocomplete="on">
             {% if next_url %}
             <input type="hidden" name="next" value="{{ next_url }}">
             {% endif %}
@@ -90,10 +90,13 @@
                 <input
                   type="email"
                   id="email"
-                  name="email"
+                  name="username"
                   placeholder="nama@domain.com"
+                  value="{{ login_email or '' }}"
                   required
-                  autocomplete="email"
+                  autocomplete="username"
+                  autocapitalize="none"
+                  spellcheck="false"
                 >
               </div>
             </div>
@@ -143,6 +146,13 @@
               <div class="forgot-password">
                 <a href="#">Lupa password?</a>
               </div>
+            </div>
+
+            <div class="remember-me-container">
+              <label class="remember-me-label" for="remember_me">
+                <input type="checkbox" id="remember_me" name="remember_me" value="true" {% if remember_me %}checked{% endif %}>
+                <span>Ingat Saya (Remember Me)</span>
+              </label>
             </div>
 
             <div class="form-actions">
