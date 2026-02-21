@@ -3,3 +3,4 @@ secrets.toml
 .env
 __pycache__/
 APIGoogleSheet.gs
+.cache
